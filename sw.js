@@ -1,6 +1,6 @@
 /* Carnet auto : hors ligne et partage. Changer VERSION à chaque mise à jour. */
-const VERSION = 'carnet-auto-0.7';
-const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'favicon-32.png', 'fra-traineddata.b64.txt', 'tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-lstm.wasm.js', 'pdf.min.js', 'pdf.worker.min.js'];
+const VERSION = 'carnet-auto-0.8';
+const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon-32.png', 'fra-traineddata.b64.txt', 'tesseract.min.js', 'worker.min.js', 'tesseract-core-simd-lstm.wasm.js', 'tesseract-core-lstm.wasm.js', 'pdf.min.js', 'pdf.worker.min.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== VERSION && k !== 'carnet-auto-fonts' && k !== 'carnet-auto-share').map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
@@ -17,7 +17,8 @@ self.addEventListener('fetch', e => {
   if (r.method !== 'GET') return;
   if (u.origin === location.origin) {
     /* La page : réseau d'abord (mises à jour), cache si hors ligne. Le reste : cache d'abord. */
-    if (r.mode === 'navigate') { e.respondWith(fetch(r).then(res => { const cp = res.clone(); caches.open(VERSION).then(c => c.put('index.html', cp)); return res; }).catch(() => caches.match('index.html'))); return; }
+    /* Si le serveur répond une erreur (404, 5xx : dépôt renommé, GitHub en panne), on sert la copie locale */
+    if (r.mode === 'navigate') { e.respondWith(fetch(r).then(res => { if (!res.ok) return caches.match('index.html').then(hit => hit || res); const cp = res.clone(); caches.open(VERSION).then(c => c.put('index.html', cp)); return res; }).catch(() => caches.match('index.html'))); return; }
     e.respondWith(caches.match(r, { ignoreSearch: true }).then(hit => hit || fetch(r).then(res => { if (res.ok) { const cp = res.clone(); caches.open(VERSION).then(c => c.put(r, cp)); } return res; })));
     return;
   }

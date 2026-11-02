@@ -433,6 +433,18 @@ td .dot { margin-right: 6px; vertical-align: middle; width: 8px; height: 8px; }
 .est-method summary::-webkit-details-marker { display: none; }
 .est-body { padding: 0 16px 14px; display: flex; flex-direction: column; gap: 8px; font-size: var(--t-sm); line-height: 1.45; }
 .check.merge { padding: 12px; border-radius: 14px; background: var(--ok-bg); color: var(--ink); }
+.check.merge.alt { background: var(--surface-2, rgba(127,127,127,.1)); }
+.attach-pick { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.attach-pick .check.merge:has(input:not(:checked)) { background: none; box-shadow: inset 0 0 0 1.5px var(--line, rgba(127,127,127,.3)); }
+.strip-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; width: 60px; }
+.strip-item .doc-cell { width: 56px; }
+.strip-cap { font-size: 11px; font-weight: 700; color: var(--ink-2); max-width: 64px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.kind-pick { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--ink-2); }
+.kind-pick select { min-height: 36px; padding: 4px 8px; border-radius: 10px; font: inherit; color: var(--ink); background: var(--surface); border: 1.5px solid var(--line, rgba(127,127,127,.35)); }
+.viewer-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px max(14px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); color: #fff; }
+.viewer-foot .kind-pick { color: #fff; }
+.viewer-foot .kind-pick select { background: #1b2124; color: #fff; border-color: rgba(255,255,255,.3); }
+.viewer-foot .btn { background: rgba(255,255,255,.14); color: #fff; box-shadow: none; }
 </style>
 
 <div class="app" id="app"><main id="view" aria-live="off"><p class="hint" style="padding:24px 0">Chargement de tes voitures…</p></main></div>
@@ -449,7 +461,7 @@ td .dot { margin-right: 6px; vertical-align: middle; width: 8px; height: 8px; }
 <script>
 'use strict';
 /* ============ Constantes ============ */
-const APP_VERSION = '0.7';
+const APP_VERSION = '0.8';
 const PALETTE = [
   { hex: '#0e7c86', name: 'Pétrole' }, { hex: '#3b6ea5', name: 'Bleu acier' }, { hex: '#1e3a8a', name: 'Marine' },
   { hex: '#7a4f9a', name: 'Prune' }, { hex: '#8e2c48', name: 'Bordeaux' }, { hex: '#b42318', name: 'Rouge' },
@@ -616,6 +628,7 @@ const IC = {
   car: '<path d="M5 17h14M4 17v-4l2-5h12l2 5v4M7 17v2M17 17v2"/><circle cx="7.5" cy="13.5" r="1"/><circle cx="16.5" cy="13.5" r="1"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   images: '<rect x="3" y="5" width="15" height="13" rx="2"/><path d="M7 21h12a2 2 0 0 0 2-2V8M3 15l4-4 4 4 2-2 5 5"/><circle cx="13.5" cy="9" r="1.2"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   attach: '<path d="M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l8.1-8.1a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6.3 6.3l2.5 2.5M15.2 15.2l2.5 2.5M6.3 17.7l2.5-2.5M15.2 8.8l2.5-2.5"/>',
@@ -1918,7 +1931,7 @@ function docCell(x) {
   const m = ev ? num(ev.montant) : (x.status === 'inbox' ? num(f.montant) : null);
   const title = ev ? (ev.type === 'depense' ? (DEP_CATS[ev.cat] || DEP_CATS.autre).label : TYPES[ev.type].label) : docTitle(x);
   return `<button class="doc-cell" data-action="open-doc" data-id="${x.id}"><span class="doc-wrap"><img class="thumb" data-thumb="${x.id}"${thumbAttr(x.id)} alt="">${badge ? `<span class="doc-badge ${badge[0]}">${badge[1]}</span>` : ''}</span>
-    <span class="cap-t">${esc(title)}</span><span class="cap-s">${esc([m != null ? fmtEur(m, 2) : '', date ? fmtDateShort(date) : 'date à lire', v ? v.surnom : ''].filter(Boolean).join(' · '))}</span></button>`;
+    <span class="cap-t">${esc(title)}${x.kind && DOC_KINDS[x.kind] ? ` · ${esc(DOC_KINDS[x.kind])}` : ''}</span><span class="cap-s">${esc([m != null ? fmtEur(m, 2) : '', date ? fmtDateShort(date) : 'date à lire', v ? v.surnom : ''].filter(Boolean).join(' · '))}</span></button>`;
 }
 function viewDocs() {
   const all = D.docs.filter(x => !U.dv || x.vehicleId === U.dv);
@@ -2049,8 +2062,7 @@ function eventFields(type, v, d, mk, op, isNew) {
       <div id="ops-box">${opsList(v.id, sel, mk.ops)}</div>
       <div class="btnrow" style="margin-top:-6px"><button type="button" class="btn quiet sm" data-action="tick-planned">${ic('check', 16)}Cocher les opérations prévues au prochain service</button></div>
       ${fIn('libelle', 'Autres travaux ou précision', d.libelle || '', { ph: 'Remplacement des essuie-glaces', mark: mk.libelle })}
-      <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>
-      <div id="merge-box">${d.id ? '' : mergeBox(v.id, 'entretien', validDate(d.date) ? d.date : todayStr(), null)}</div>`;
+      <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>`;
   }
   if (type === 'reparation') {
     const sel = Array.isArray(d.ops) ? d.ops : (op ? [op] : []);
@@ -2058,8 +2070,7 @@ function eventFields(type, v, d, mk, op, isNew) {
       <div class="grid2">${fIn('montant', 'Montant (€)', decm(d.montant), { dec: true, mark: mk.montant })}${fIn('km', 'Kilométrage', d.km ?? '', { int: true, mark: mk.km })}</div>
       ${fIn('garage', 'Garage', d.garage || (v.tech && v.tech.garage) || '', { mark: mk.garage })}
       <div id="ops-box">${opsList(v.id, sel, mk.ops)}</div>
-      <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>
-      <div id="merge-box">${d.id ? '' : mergeBox(v.id, 'reparation', validDate(d.date) ? d.date : todayStr(), null)}</div>`;
+      <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>`;
   }
   if (type === 'nettoyage') {
     const sel = Array.isArray(d.ops) ? d.ops : (op ? [op] : []);
@@ -2158,7 +2169,8 @@ function openEventForm({ type, vid, id, op, docId, init }) {
   const title = doc ? 'Vérifier le document' : (e ? 'Modifier · ' : '') + TYPES[type].label;
   const head = doc ? reviewHead(doc) : attachStrip(attached, e ? e.id : 'form');
   const types = doc ? `<div class="types" role="group" aria-label="Type de document">${DOC_TYPES.map(([k, l]) => `<button type="button" data-action="doc-type" data-type="${k}" aria-pressed="${k === type}">${l}</button>`).join('')}</div>` : '';
-  const dup = doc && !busy ? findDuplicate({ vehicleId: vid, type, date, montant: num(d.montant), litres: num(d.litres) }, null) : null;
+  const mb = e || busy ? '' : mergeBox(vid, type, date, null, !!doc);
+  const dup = doc && !busy && !mb ? findDuplicate({ vehicleId: vid, type, date, montant: num(d.montant), litres: num(d.litres) }, null) : null;
   const actions = doc
     ? `<button type="button" class="btn line" data-action="close-sheet">Plus tard</button><button type="submit" class="btn primary grow" ${busy ? 'disabled' : ''}>Enregistrer</button>`
     : `${e ? `<button type="button" class="btn danger" data-action="del-event" data-id="${e.id}">${U.armed === 'ev:' + e.id ? 'Confirmer' : 'Supprimer'}</button>` : ''}<button type="submit" class="btn primary grow">Enregistrer</button>`;
@@ -2168,6 +2180,7 @@ function openEventForm({ type, vid, id, op, docId, init }) {
     ${busy ? '' : `${dup ? `<div class="note warn">${ic('alert', 18)}<p>Une saisie semblable existe déjà : ${esc(eventTitle(dup))}, ${fmtDate(dup.date)}${num(dup.montant) != null ? ', ' + fmtEur(num(dup.montant), 2) : ''}.</p></div>` : ''}
     ${vehicleRadios(vid, mk.vehicleId)}
     ${fIn('date', 'Date', date, { type: 'date', mark: mk.date })}
+    ${e ? '' : `<div id="merge-box">${mb}</div>`}
     ${eventFields(type, v, d, mk, op, !e)}
     <div class="field"><label for="f-notes">Notes</label><textarea id="f-notes" name="notes" rows="2">${esc(d.notes || '')}</textarea></div>
     ${doc ? ocrBlock(doc) : ''}
@@ -2191,10 +2204,10 @@ function reviewHead(doc) {
   }
   const again = busy ? '' : `<div class="btnrow">${doc.engine !== 'claude' && doc.engine !== 'pdf' && OCR.state !== 'failed' ? `<button type="button" class="btn line sm" data-action="doc-reread" data-id="${doc.id}">${ic('refresh', 16)}Relire</button>` : ''}${AI.available() ? `<button type="button" class="btn line sm" data-action="doc-ai" data-id="${doc.id}">${ic('spark', 16)}${doc.engine === 'claude' ? 'Relire avec Claude' : 'Lire avec Claude'}</button>` : ''}</div>`;
   return `<div class="doc-head"><button type="button" class="doc-cell" style="flex:none;width:96px" data-action="view-doc" data-id="${doc.id}" aria-label="Agrandir la photo"><img class="thumb lg" data-thumb="${doc.id}"${thumbAttr(doc.id)} alt=""></button>
-    <div class="meta">${status}${again}</div></div>`;
+    <div class="meta">${status}${again}${busy ? '' : kindSelect(doc, 'f-kind')}</div></div>`;
 }
 function attachStripInner(ids, target) {
-  return `<span class="legend-label">Photos${ids.length ? ` · ${ids.length}` : ''}</span><div class="doc-strip">${ids.map(id => `<button type="button" class="doc-cell" style="width:56px;flex:none" data-action="view-doc" data-id="${id}" aria-label="Agrandir la photo"><img class="thumb" data-thumb="${id}"${thumbAttr(id)} alt=""></button>`).join('')}
+  return `<span class="legend-label">Documents${ids.length ? ` · ${ids.length}` : ''}</span><div class="doc-strip">${ids.map(id => { const k = kindShort(docById(id)); return `<span class="strip-item"><button type="button" class="doc-cell" data-action="view-doc" data-id="${id}" aria-label="Agrandir : ${esc(k)}"><img class="thumb" data-thumb="${id}"${thumbAttr(id)} alt=""></button><span class="strip-cap" aria-hidden="true">${esc(k)}</span></span>`; }).join('')}
     <label class="thumb" for="cap-attach-cam" tabindex="0" data-file="cap-attach-cam" data-attach-ev="${target}" style="display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-2)" aria-label="Prendre une photo">${ic('camera', 22)}</label>
     <label class="thumb" for="cap-attach" tabindex="0" data-file="cap-attach" data-attach-ev="${target}" style="display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink-2)" aria-label="Joindre une photo de la galerie">${ic('images', 22)}</label></div>`;
 }
@@ -2233,7 +2246,7 @@ function findDuplicate(o, selfId) {
 }
 function submitEvent(form) {
   const g = n => form.elements[n] ? form.elements[n].value : '';
-  const type = form.dataset.type, docId = form.dataset.doc; let id = form.dataset.id;
+  let type = form.dataset.type; const docId = form.dataset.doc; let id = form.dataset.id;
   const vidEl = form.querySelector('input[name="vehicleId"]:checked'); const vid = vidEl ? vidEl.value : null;
   const errs = [], warns = [];
   const date = g('date');
@@ -2327,15 +2340,16 @@ function submitEvent(form) {
     if (km < before) warns.push(`Le compteur indiquait déjà ${fmtN(before)} km à une date antérieure.`);
     if (km > after) warns.push(`Un relevé plus récent indique ${fmtN(after)} km, moins que ${fmtN(km)}.`);
   }
-  const mi = form.querySelector('input[name="mergeInto"]:checked'); const mt = mi && D.events.find(x => x.id === mi.value);
-  if (mt && !id && mt.vehicleId === vid) {
-    const ops = Array.from(new Set([...(mt.ops || []), ...(o.ops || [])]));
-    const lib = mt.libelle && o.libelle && !norm(mt.libelle).includes(norm(o.libelle)) ? mt.libelle + ' · ' + o.libelle : (mt.libelle || o.libelle || '');
-    Object.assign(o, { date: mt.date, type: mt.type, km: o.km ?? mt.km, garage: mt.garage || o.garage || '', ops, libelle: lib, notes: [mt.notes, o.notes].filter(Boolean).join(' ') });
-    if (mt.type === 'entretien') Object.assign(o, { service: mt.service || o.service || '', huileQualite: mt.huileQualite || o.huileQualite || '', huileViscosite: mt.huileViscosite || o.huileViscosite || '', antigel: mt.antigel ?? o.antigel ?? null });
-    id = mt.id;
+  /* Rattachement à une saisie existante : seuls ses champs vides sont complétés, rien n'est écrasé */
+  const mi = form.querySelector('input[name="mergeInto"]:checked'); const mt = !id && mi && mi.value ? D.events.find(x => x.id === mi.value && x.vehicleId === vid) : null;
+  let attachMsg = '';
+  if (mt) {
+    const { out, filled } = fillEmpty(mt, o);
+    Object.keys(o).forEach(k => delete o[k]); Object.assign(o, out, { vehicleId: mt.vehicleId, type: mt.type, date: mt.date });
+    id = mt.id; type = mt.type; errs.length = 0; warns.length = 0;
+    attachMsg = filled.length ? `complété : ${filled.slice(0, 3).join(', ')}${filled.length > 3 ? '…' : ''}` : 'rien d’écrasé';
   }
-  const dup = errs.length || mi ? null : findDuplicate(o, id || null);
+  const dup = errs.length || mt ? null : findDuplicate(o, id || null);
   if (dup) warns.push(`Une saisie identique existe déjà (${fmtDate(dup.date)}).`);
   const box = $('#form-err');
   if (errs.length) { box.textContent = errs.join(' '); box.hidden = false; box.scrollIntoView({ block: 'nearest' }); return; }
@@ -2352,7 +2366,7 @@ function submitEvent(form) {
   if (docId) {
     const doc = docById(docId);
     if (doc) {
-      ev.docs = Array.from(new Set([...(ev.docs || []), doc.id])); ev.source = doc.engine || 'photo';
+      ev.docs = Array.from(new Set([...(ev.docs || []), doc.id])); if (!mt || !ev.source) ev.source = doc.engine || 'photo';
       doc.status = 'linked'; doc.eventId = ev.id; doc.vehicleId = vid; doc.type = type; delete doc.draft;
       const fa = veh(vid).assurance || {}; const newer = !validDate(fa.echeance) || !validDate(o.fin) || addDays(o.fin, 1) >= fa.echeance;
       if (type === 'assurance' && form.elements.majFiche && form.elements.majFiche.checked && !newer) toast('Document plus ancien que la fiche : fiche inchangée');
@@ -2372,15 +2386,16 @@ function submitEvent(form) {
     D.events.forEach(r => {
       if (r.type !== 'remarque' || r.vehicleId !== vid) return;
       if (sel.has(r.id)) { if (r.resolBy !== ev.id) { r.statut = 'resolu'; r.resolBy = ev.id; r.resolDate = ev.date; } }
-      else if (r.resolBy === ev.id) { r.statut = 'ouvert'; delete r.resolBy; delete r.resolDate; }
+      else if (r.resolBy === ev.id && !mt) { r.statut = 'ouvert'; delete r.resolBy; delete r.resolDate; }
     });
   }
   if (type === 'pneus' && o.op === 'montage' && vid && o.dim) { const v = veh(vid); const k = o.saison === 'hiver' ? 'pneusHiver' : 'pneusEte'; if (!v.tech[k]) v.tech[k] = [o.dim, o.indices].filter(Boolean).join(' '); }
   if (id && type === 'pneus') { const keep = { montage: ['pos', 'marque', 'modele', 'dim', 'indices', 'saison', 'dot', 'depose'], remontage: ['setId', 'depose'], controle: ['pression', 'prof'] }[o.op] || []; ['pos', 'marque', 'modele', 'dim', 'indices', 'saison', 'dot', 'depose', 'setId', 'pression', 'prof'].forEach(k => { if (!keep.includes(k)) delete ev[k]; }); }
   D.meta.lastVehicle = vid; persist();
   const label = type === 'remarque' ? 'Remarque enregistrée' : type === 'pneus' ? (o.op === 'controle' ? 'Relevé enregistré' : o.op === 'montage' ? 'Pneus enregistrés' : o.op === 'remontage' ? 'Remontage enregistré' : o.op === 'permutation' ? 'Permutation enregistrée' : 'Saisie enregistrée') : `${type === 'entretien' && o.service ? SERVICE_TYPES[o.service] : TYPES[type].label} enregistré${type === 'assurance' || type === 'reparation' || type === 'depense' ? 'e' : ''}`;
-  if (docId && U.view === 'docs') { const next = D.docs.find(x => x.status === 'inbox' && x.id !== docId); rerender(); if (next) { openEventForm({ docId: next.id }); toast(label + ' · document suivant'); return; } }
-  closeSheet(); rerender(); toast(label);
+  const msg = mt ? `Rattaché à « ${eventTitle(ev)} » · ${attachMsg}` : label;
+  if (docId && U.view === 'docs') { const next = D.docs.find(x => x.status === 'inbox' && x.id !== docId); rerender(); if (next) { openEventForm({ docId: next.id }); toast(msg + ' · document suivant'); return; } }
+  closeSheet(); rerender(); toast(msg);
 }
 function openReminderForm(vid) {
   openSheet(`<form data-form="reminder" novalidate><div class="stack">${sheetHead('Rappel')}
@@ -2900,7 +2915,8 @@ function aiPrompt(doc) {
   return [
     doc.hint === 'km' ? 'La photo montre le tableau de bord d’une voiture. Lis le kilométrage total du compteur (pas le compteur journalier « trip »).' : 'La photo montre un document ou une scène liés à une voiture, en France : ticket de carburant, facture de garage ou de pneus, constat amiable ou courrier de sinistre, voyant allumé ou message au tableau de bord, dégât sur la carrosserie ou un vitrage, procès-verbal de contrôle technique, ticket de parking ou de péage, avis d’échéance ou attestation d’assurance, ou une autre dépense.',
     'Réponds uniquement par un objet JSON avec exactement ces clés. Mets null quand l’information n’apparaît pas : ne devine rien.',
-    '{"type": "plein"|"entretien"|"reparation"|"pneus"|"remarque"|"achat"|"ct"|"assurance"|"stationnement"|"peage"|"lavage"|"autre"|"compteur", "date": "AAAA-MM-JJ", "montant_ttc": nombre, "litres": nombre, "prix_litre": nombre, "carburant": "SP95-E10"|"SP95"|"SP98"|"E85"|"Gazole"|"GPL"|null, "kilometrage": entier, "immatriculation": texte, "commerce": texte, "libelle": texte, "operations": [texte], "type_service": "intermediaire"|"principal"|null, "huile_qualite": texte, "huile_viscosite": texte, "antigel_c": nombre, "ct_resultat": "A"|"S"|"R"|null, "ct_prochaine_visite": "AAAA-MM-JJ", "periode_debut": "AAAA-MM-JJ", "periode_fin": "AAAA-MM-JJ", "bonus_malus": nombre, "pneus_operation": "montage"|"reparation"|"geometrie"|"permutation"|"autre"|null, "pneus_marque": texte, "pneus_modele": texte, "pneus_dimension": texte, "pneus_indices": texte, "pneus_quantite": entier, "pneus_saison": "ete"|"hiver"|"4saisons"|null, "pneus_dot": texte, "remarque_categorie": "voyant"|"message"|"anomalie"|"vitrage"|"carrosserie"|"accident"|"autre"|null, "voyant": "moteur"|"huile"|"temperature"|"batterie"|"freins"|"abs"|"airbag"|"esp"|"pneus"|"service"|"direction"|"eclairage"|"carburant"|"autre"|null, "voyant_couleur": "rouge"|"orange"|"vert ou bleu"|null, "message_affiche": texte, "nature": texte, "zone": texte, "lieu": texte, "tiers_immatriculation": texte, "tiers_assureur": texte, "numero_sinistre": texte, "responsabilite": "non"|"partagee"|"oui"|null, "prix_vehicule": nombre, "confiance": "haute"|"moyenne"|"basse"}',
+    '{"type": "plein"|"entretien"|"reparation"|"pneus"|"remarque"|"achat"|"ct"|"assurance"|"stationnement"|"peage"|"lavage"|"autre"|"compteur", "date": "AAAA-MM-JJ", "montant_ttc": nombre, "litres": nombre, "prix_litre": nombre, "carburant": "SP95-E10"|"SP95"|"SP98"|"E85"|"Gazole"|"GPL"|null, "kilometrage": entier, "immatriculation": texte, "commerce": texte, "libelle": texte, "operations": [texte], "type_service": "intermediaire"|"principal"|null, "huile_qualite": texte, "huile_viscosite": texte, "antigel_c": nombre, "ct_resultat": "A"|"S"|"R"|null, "ct_prochaine_visite": "AAAA-MM-JJ", "periode_debut": "AAAA-MM-JJ", "periode_fin": "AAAA-MM-JJ", "bonus_malus": nombre, "pneus_operation": "montage"|"reparation"|"geometrie"|"permutation"|"autre"|null, "pneus_marque": texte, "pneus_modele": texte, "pneus_dimension": texte, "pneus_indices": texte, "pneus_quantite": entier, "pneus_saison": "ete"|"hiver"|"4saisons"|null, "pneus_dot": texte, "remarque_categorie": "voyant"|"message"|"anomalie"|"vitrage"|"carrosserie"|"accident"|"autre"|null, "voyant": "moteur"|"huile"|"temperature"|"batterie"|"freins"|"abs"|"airbag"|"esp"|"pneus"|"service"|"direction"|"eclairage"|"carburant"|"autre"|null, "voyant_couleur": "rouge"|"orange"|"vert ou bleu"|null, "message_affiche": texte, "nature": texte, "zone": texte, "lieu": texte, "tiers_immatriculation": texte, "tiers_assureur": texte, "numero_sinistre": texte, "responsabilite": "non"|"partagee"|"oui"|null, "prix_vehicule": nombre, "nature_document": "facture"|"ticket"|"pv"|"devis"|"carnet"|"avis"|"echeancier"|"attestation"|"constat"|"courrier"|"commande"|"cg"|"photo"|null, "confiance": "haute"|"moyenne"|"basse"}',
+    '« nature_document » : la nature du papier lui-même (« pv » pour le procès-verbal d’un contrôle technique, « facture » pour sa facture, « photo » pour une photo du tableau de bord ou d’un dégât).',
     'Document d’achat de la voiture (facture de vente, bon de commande, certificat de cession) : type "achat", « prix_vehicule » prix payé TTC, « kilometrage » au jour de l’achat, « commerce » le vendeur, « date » la date de vente. Avis d’échéance ou échéancier d’assurance : « montant_ttc » = total de la période (somme des prélèvements pour un échéancier), « periode_debut » et « periode_fin », « bonus_malus » le coefficient (ex. 0.50).',
     'Type "remarque" pour : une photo du tableau de bord où un voyant est allumé (remarque_categorie "voyant", le voyant et sa couleur) ou un message s’affiche ("message", texte exact dans « message_affiche ») ; une photo de dégât (« carrosserie » : nature Rayure, Bosse, Choc, Rétroviseur ; « vitrage » : nature Impact, Fissure ou Bris ; « zone » comme « Portière avant droite » ou « Pare-brise ») ; un constat amiable, une déclaration ou un courrier de sinistre ("accident" : « date » = jour de l’accident, « lieu », véhicule et assureur de l’autre partie, numéro de sinistre). « libelle » : une phrase courte qui décrit le constat. Une photo du compteur sans voyant ni message reste de type "compteur".',
     'Pour une facture de pneus : type "pneus" ; « pneus_operation » "montage" pour des pneus neufs achetés ou montés ; « pneus_dimension » sous la forme « 205/55 R16 » ; « pneus_indices » charge et vitesse collés (« 91V ») ; « pneus_quantite » le nombre de pneus ; « pneus_saison » d’après le modèle (pneus hiver, 4 saisons ou été) ; « pneus_dot » les 4 chiffres semaine-année seulement s’ils sont écrits. Une facture de garage qui comporte surtout des pneus est de type "pneus".',
@@ -2915,6 +2931,7 @@ function fromAi(j, ctx) {
   const set = (k, v, sure = true) => { if (v == null || v === '' || (typeof v === 'number' && !Number.isFinite(v)) || (Array.isArray(v) && !v.length)) return; fields[k] = v; conf[k] = low || !sure ? 'check' : 'ok'; };
   const n = x => typeof x === 'number' ? x : num(x);
   const t = String(j.type || '').toLowerCase();
+  const kindAi = DOC_KINDS[String(j.nature_document || '').toLowerCase()] ? String(j.nature_document).toLowerCase() : null;
   let type = null, cat = null;
   if (ctx.hint === 'km' || t === 'compteur') type = 'km';
   else if (['plein', 'entretien', 'reparation', 'ct', 'assurance'].includes(t)) type = t;
@@ -2933,7 +2950,7 @@ function fromAi(j, ctx) {
     if (!fields.date) set('date', todayStr());
     const est = vInfo ? ctx.kmEst(vInfo.id, todayStr()) : null;
     if (est) { fields.kmHint = `D’après tes relevés, le compteur devrait indiquer environ ${fmtN(est)} km.`; if (fields.km != null && Math.abs(fields.km - est) > Math.max(3000, est * 0.15)) conf.km = 'check'; }
-    return { type, fields, conf };
+    return { type, fields, conf, kind: kindAi };
   }
   set('montant', n(j.montant_ttc));
   if (type === 'plein') {
@@ -2998,7 +3015,7 @@ function fromAi(j, ctx) {
   } else {
     set('cat', cat); set('libelle', j.commerce || j.libelle || null);
   }
-  return { type, fields, conf };
+  return { type, fields, conf, kind: kindAi };
 }
 const AI_ERR = {
   not_granted: 'La lecture par Claude n’a pas été autorisée.', sampling_disabled: 'Claude n’est pas disponible pour ce compte.', not_declared: 'La lecture par Claude n’est pas disponible.', capability_disabled: 'La lecture par Claude n’est pas disponible dans cette vue.', capability_removed: 'La lecture par Claude n’est pas disponible dans cette vue.', images_unavailable: 'Cette vue ne peut pas envoyer de photo à Claude.',
@@ -3020,6 +3037,7 @@ function applyParse(doc, p, engine) {
   doc.type = p.type || doc.type || 'depense';
   doc.fields = p.fields || {}; doc.conf = p.conf || {};
   if (doc.fields.vehicleId) doc.vehicleId = doc.fields.vehicleId;
+  if (p.kind && !doc.kindSet) doc.kind = p.kind;
   doc.engine = engine; doc.error = null; doc.status = 'inbox'; delete doc.draft; delete doc.want;
 }
 
@@ -3080,7 +3098,7 @@ async function readDocLocal(doc, forced) {
     if (best.fields.montant != null && best.conf.montant === 'ok') break;
   }
   if (bmp.close) bmp.close();
-  applyParse(doc, best, 'local'); doc.text = String(best.text || '').slice(0, 4000);
+  applyParse(doc, best, 'local'); doc.text = String(best.text || '').slice(0, 4000); if (!doc.kindSet) doc.kind = docKind(doc.text) || doc.kind || null;
 }
 async function readDocAi(doc) {
   Queue.step('Lecture par Claude…', 0.3);
@@ -3114,6 +3132,7 @@ async function ingestOne(file, opts) {
     doc.pages = pdf.pages; doc.engine = 'pdf';
     if (doc.status === 'inbox') applyParse(doc, parseDocText(pdf.text, ctxFor(doc)), 'pdf');
     doc.text = pdf.text.slice(0, 8000);
+    doc.kind = docKind(pdf.text) || (doc.status === 'linked' || doc.status === 'kept' ? null : doc.kind);
   }
   D.docs.push(doc); return doc;
 }
@@ -3178,10 +3197,11 @@ function openDoc(id) {
   if (doc.status === 'linked' && doc.eventId && D.events.some(e => e.id === doc.eventId)) { openEventForm({ id: doc.eventId }); return; }
   if (doc.status === 'linked') doc.status = 'kept';
   if (doc.status === 'kept') {
-    openSheet(`${sheetHead('Photo sans saisie', doc.vehicleId && veh(doc.vehicleId) ? veh(doc.vehicleId).surnom : '')}
+    openSheet(`${sheetHead('Document sans saisie', doc.vehicleId && veh(doc.vehicleId) ? veh(doc.vehicleId).surnom : '')}
       <div class="doc-head"><button type="button" class="doc-cell" style="flex:none;width:96px" data-action="view-doc" data-id="${doc.id}" aria-label="Agrandir la photo"><img class="thumb lg" data-thumb="${doc.id}"${thumbAttr(doc.id)} alt=""></button>
-      <div class="meta"><b>Ajoutée le ${fmtDate(String(doc.added).slice(0, 10))}</b><p class="hint">Cette photo est rangée sans saisie dans le journal.</p></div></div>
-      <div class="sheet-actions"><button class="btn danger" data-action="doc-del" data-id="${doc.id}">${U.armed === 'doc:' + doc.id ? 'Confirmer' : 'Supprimer'}</button><button class="btn primary grow" data-action="doc-make" data-id="${doc.id}">Créer une saisie</button></div>`);
+      <div class="meta"><b>Ajoutée le ${fmtDate(String(doc.added).slice(0, 10))}</b><p class="hint">${doc.role === 'achat' ? 'Document d’achat, rangé avec la voiture.' : 'Ce document est rangé sans saisie.'}</p>${kindSelect(doc, 'f-kind')}</div></div>
+      <div class="btnrow"><button class="btn line grow" data-action="doc-attach" data-id="${doc.id}">${ic('link', 16)}Rattacher à une saisie</button><button class="btn line grow" data-action="doc-make" data-id="${doc.id}">Créer une saisie</button></div>
+      <div class="sheet-actions"><button class="btn danger grow" data-action="doc-del" data-id="${doc.id}">${U.armed === 'doc:' + doc.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`);
     return;
   }
   openEventForm({ docId: id });
@@ -3195,10 +3215,12 @@ async function deleteDoc(id) {
 let viewerUrl = null;
 async function openViewer(id) {
   const rec = await Store.getFile(id); if (!rec) { toast('Photo introuvable sur cet appareil'); return; }
+  const doc = docById(id);
   closeViewer();
   viewerUrl = URL.createObjectURL(new Blob([rec.full], { type: rec.type || 'image/jpeg' }));
   $('#viewer-root').innerHTML = `<div class="viewer" role="dialog" aria-modal="true" aria-label="Photo du document"><div class="viewer-bar"><span>Touche la photo pour zoomer</span><button class="icon-btn" data-action="close-viewer" aria-label="Fermer la photo">${ic('x')}</button></div>
-    <div class="viewer-img" data-action="zoom-viewer"><img src="${viewerUrl}" alt="Photo du document"></div></div>`;
+    <div class="viewer-img" data-action="zoom-viewer"><img src="${viewerUrl}" alt="Photo du document"></div>
+    ${doc ? `<div class="viewer-foot">${kindSelect(doc)}${doc.status === 'linked' && doc.eventId ? `<button class="btn sm" data-action="doc-detach" data-id="${doc.id}">${U.armed === 'det:' + doc.id ? 'Confirmer' : 'Détacher de la saisie'}</button>` : ''}</div>` : ''}</div>`;
   $('#viewer-root .icon-btn').focus({ preventScroll: true });
 }
 function closeViewer() { $('#viewer-root').innerHTML = ''; if (viewerUrl) { URL.revokeObjectURL(viewerUrl); viewerUrl = null; } }
@@ -3752,16 +3774,87 @@ async function pdfRead(file) {
   return { canvas: c, text: lines.join('\n'), pages: n };
 }
 
-/* ============ Factures et carnet : compléter au lieu de dupliquer ============ */
-function mergeCandidate(vid, type, date, selfId) {
-  if (!['entretien', 'reparation'].includes(type) || !vid || !validDate(date)) return null;
-  const c = D.events.filter(e => e.vehicleId === vid && e.type === 'entretien' && e.id !== selfId && validDate(e.date) && Math.abs(diffDays(e.date, date)) <= 10 && num(e.montant) == null)
-    .sort((a, b) => Math.abs(diffDays(a.date, date)) - Math.abs(diffDays(b.date, date)));
-  return c[0] || null;
+/* ============ Plusieurs documents pour une même saisie ============ */
+/* Nature du document : sert d'étiquette sous les vignettes (PV + facture d'un même contrôle, devis + facture…) */
+const DOC_KINDS = { facture: 'Facture', ticket: 'Ticket', pv: 'PV de contrôle', devis: 'Devis', carnet: 'Carnet', avis: 'Avis d’échéance', echeancier: 'Échéancier', attestation: 'Attestation', constat: 'Constat', courrier: 'Courrier', commande: 'Bon de commande', cg: 'Carte grise', photo: 'Photo', autre: 'Autre' };
+function docKind(text) {
+  const T = norm(String(text || '')); if (!T.trim()) return null;
+  if (/constat amiable|declaration d.?accident/.test(T)) return 'constat';
+  if (/proces.?verbal|controle technique.{0,400}(defaillance|resultat|favorable|contre.?visite)|(defaillance|contre.?visite).{0,400}controle technique/.test(T)) return 'pv';
+  if (/bon de commande/.test(T)) return 'commande';
+  if (/certificat d.?immatriculation/.test(T)) return 'cg';
+  if (/confirmation d.?entretien|carnet d.?entretien/.test(T)) return 'carnet';
+  if (/echeancier/.test(T)) return 'echeancier';
+  if (/avis d.?echeance/.test(T)) return 'avis';
+  if (/attestation d.?assurance|memo vehicule assure|carte verte/.test(T)) return 'attestation';
+  if (/\bdevis\b/.test(T) && !/\bfacture\b/.test(T)) return 'devis';
+  if (/\bfacture\b|\bfacture n|invoice/.test(T)) return 'facture';
+  if (/ticket|carte bancaire|\bcb\b|sans contact|carburant|litres?\b|\bpompe\b/.test(T)) return 'ticket';
+  return null;
 }
-function mergeBox(vid, type, date, selfId) {
-  const c = mergeCandidate(vid, type, date, selfId); if (!c) return '';
-  return `<label class="check merge"><input type="checkbox" name="mergeInto" value="${c.id}" checked><span>Compléter « ${esc(eventTitle(c))} » du ${fmtDate(c.date)}, déjà noté sans montant<br><span class="hint">Montant, garage, opérations et photo s’y ajoutent : pas de doublon.</span></span></label>`;
+const KIND_SHORT = { pv: 'PV', avis: 'Avis', commande: 'Commande', attestation: 'Attestation', echeancier: 'Échéancier' };
+const kindShort = doc => (doc && KIND_SHORT[doc.kind]) || kindLabel(doc);
+const kindLabel = doc => (doc && DOC_KINDS[doc.kind]) || (doc && doc.role === 'achat' ? 'Achat' : 'Photo');
+const kindSelect = (doc, id) => `<label class="kind-pick"><span>Nature</span><select ${id ? `id="${id}" ` : ''}data-doc-kind="${doc.id}" aria-label="Nature du document"><option value="">—</option>${Object.entries(DOC_KINDS).map(([k, l]) => `<option value="${k}" ${doc.kind === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+
+/* Saisies existantes auxquelles un document peut se rattacher : même voiture, type compatible, date proche */
+const ATTACH_COMPAT = { entretien: ['entretien', 'reparation'], reparation: ['reparation', 'entretien', 'pneus', 'ct'], ct: ['ct', 'reparation'], pneus: ['pneus', 'reparation', 'entretien'], assurance: ['assurance'], remarque: ['remarque'], nettoyage: ['nettoyage'], plein: ['plein'], depense: ['depense', 'reparation', 'entretien', 'ct', 'pneus', 'nettoyage', 'assurance', 'remarque'] };
+const ATTACH_DAYS = { plein: 1, assurance: 45 };
+function attachCandidates(vid, type, date, selfId) {
+  const ok = ATTACH_COMPAT[type]; if (!ok || !vid || !validDate(date)) return [];
+  const win = ATTACH_DAYS[type] ?? 10;
+  return D.events.filter(e => e.vehicleId === vid && e.id !== selfId && ok.includes(e.type) && validDate(e.date) && Math.abs(diffDays(e.date, date)) <= win)
+    .sort((a, b) => (a.type !== type) - (b.type !== type) || Math.abs(diffDays(a.date, date)) - Math.abs(diffDays(b.date, date))).slice(0, 3);
+}
+/* Rattacher par défaut quand c'est presque sûrement la même intervention */
+function attachDefault(c, type, date, hasDoc) {
+  if (c.type === 'entretien' && num(c.montant) == null && ['entretien', 'reparation'].includes(type)) return true;
+  return hasDoc && c.type === type && type !== 'plein' && Math.abs(diffDays(c.date, date)) <= 3;
+}
+/* Compat : ancien nom, utilisé par les tests */
+function mergeCandidate(vid, type, date, selfId) { const c = attachCandidates(vid, type, date, selfId).find(e => attachDefault(e, type, date, false)); return c || null; }
+function mergeBox(vid, type, date, selfId, hasDoc) {
+  if (!hasDoc && !['entretien', 'reparation'].includes(type)) return '';
+  const cs = attachCandidates(vid, type, date, selfId); if (!cs.length) return '';
+  if (!hasDoc && !cs.some(c => attachDefault(c, type, date, false))) return '';
+  const def = cs.find(c => attachDefault(c, type, date, hasDoc));
+  const nd = c => (c.docs || []).filter(docById).length;
+  const opt = c => `<label class="check merge"><input type="radio" name="mergeInto" value="${c.id}" ${def === c ? 'checked' : ''}><span>Rattacher à « ${esc(eventTitle(c))} » du ${fmtDate(c.date)}${num(c.montant) != null ? ', ' + fmtEur(num(c.montant), 2) : ''}<br><span class="hint">${nd(c) ? `Déjà ${nd(c)} document${nd(c) > 1 ? 's' : ''}. ` : ''}${num(c.montant) == null && c.type === 'entretien' ? 'Noté sans montant : seuls' : 'Seuls'} les champs vides seront complétés.</span></span></label>`;
+  return `<fieldset class="field attach-pick"><legend class="legend-label">${hasDoc ? 'Ce document va avec une saisie existante ?' : 'Déjà noté ?'}</legend>${cs.map(opt).join('')}
+    <label class="check merge alt"><input type="radio" name="mergeInto" value="" ${def ? '' : 'checked'}><span>${hasDoc ? 'Non, créer une nouvelle saisie' : 'Non, c’est une autre intervention'}</span></label></fieldset>`;
+}
+/* Fusion « champs vides seulement » : rien de ce qui est déjà noté n'est écrasé */
+const isBlank = x => x == null || x === '' || (Array.isArray(x) && !x.length) || (typeof x === 'object' && !Array.isArray(x) && !Object.keys(x).length);
+const FIELD_NAMES = { montant: 'montant', km: 'kilométrage', garage: 'garage', libelle: 'libellé', litres: 'litres', prix: 'prix au litre', station: 'station', resultat: 'résultat', prochain: 'prochaine visite', assureur: 'assureur', debut: 'début', fin: 'fin', crm: 'bonus', service: 'type de service', huileQualite: 'huile', huileViscosite: 'viscosité', antigel: 'antigel', marque: 'marque', modele: 'modèle', dim: 'dimension', dot: 'DOT', ops: 'opérations', centre: 'centre', litresL: 'litres', carburant: 'carburant', debutC: 'début' };
+function fillEmpty(target, src) {
+  const same = target.type === src.type; const filled = [];
+  const keys = same ? Object.keys(src) : ['montant', 'km', 'garage', 'libelle', 'ops'];
+  const out = Object.assign({}, target); delete out.id; delete out.created; delete out.docs;
+  keys.forEach(k => {
+    if (['vehicleId', 'type', 'date', 'notes', 'id', 'created', 'docs', 'demo'].includes(k) || isBlank(src[k])) return;
+    if (k === 'ops') { const u = Array.from(new Set([...(target.ops || []), ...src.ops])); if (u.length > (target.ops || []).length) { out.ops = u; filled.push(k); } return; }
+    if (isBlank(target[k])) { out[k] = src[k]; filled.push(k); }
+  });
+  if (src.notes && !String(target.notes || '').includes(src.notes)) out.notes = [target.notes, src.notes].filter(Boolean).join(' ');
+  return { out, filled: filled.filter(k => FIELD_NAMES[k]).map(k => FIELD_NAMES[k]) };
+}
+function attachDocTo(doc, ev) {
+  const same = doc.type === ev.type, f = doc.fields || {}, done = [];
+  ev.docs = Array.from(new Set([...(ev.docs || []), doc.id]));
+  doc.status = 'linked'; doc.eventId = ev.id; doc.vehicleId = ev.vehicleId; doc.type = ev.type; delete doc.draft; delete doc.pending;
+  (same ? ['montant', 'km', 'garage'] : ['montant', 'km']).forEach(k => { if (isBlank(ev[k]) && !isBlank(f[k])) { ev[k] = f[k]; done.push(FIELD_NAMES[k]); } });
+  return done;
+}
+function docAttachSheet(id) {
+  const doc = docById(id); if (!doc) return;
+  const ref = validDate((doc.fields || {}).date) ? doc.fields.date : String(doc.added).slice(0, 10);
+  const list = D.events.filter(e => (!doc.vehicleId || e.vehicleId === doc.vehicleId) && validDate(e.date) && e.type !== 'km')
+    .sort((a, b) => Math.abs(diffDays(a.date, ref)) - Math.abs(diffDays(b.date, ref))).slice(0, U.attachMore ? 40 : 8);
+  openSheet(`${sheetHead('Rattacher à une saisie', kindLabel(doc))}
+    <p class="hint" style="padding:0 4px">Saisies les plus proches du ${fmtDate(ref)}${doc.vehicleId && veh(doc.vehicleId) ? `, ${esc(veh(doc.vehicleId).surnom)}` : ''}. Le document s’ajoute à la saisie ; seuls ses champs vides (montant, kilométrage, garage) sont complétés.</p>
+    ${list.length ? `<ul class="card rows">${list.map(e => { const v = veh(e.vehicleId); return `<li><button class="row" data-action="doc-attach-to" data-id="${doc.id}" data-ev="${e.id}"><span class="tile car" style="--cc:${v ? v.couleur : '#687072'}">${ic(iconOf(e), 19)}</span><span class="row-main"><span class="row-title">${esc(eventTitle(e))}</span><span class="row-sub">${esc([fmtDate(e.date), v ? v.surnom : '', (e.docs || []).filter(docById).length ? (e.docs || []).filter(docById).length + ' doc.' : ''].filter(Boolean).join(' · '))}</span></span>${num(e.montant) != null ? `<span class="row-trail">${fmtEur(num(e.montant), 2)}</span>` : ''}</button></li>`; }).join('')}</ul>` : '<div class="card"><div class="empty">Aucune saisie pour cette voiture.</div></div>'}
+    ${!U.attachMore && list.length === 8 ? `<div class="btnrow" style="justify-content:center"><button class="btn quiet sm" data-action="doc-attach-more" data-id="${doc.id}">Afficher plus de saisies</button></div>` : ''}
+    <div class="sheet-actions"><button class="btn line grow" data-action="open-doc" data-id="${doc.id}">Retour</button></div>`);
 }
 
 /* ============ Divers ============ */
@@ -4273,8 +4366,22 @@ const ACTIONS = {
     list.forEach(x => { x.status = 'queued'; x.want = 'claude'; }); persist(); Queue.kick(); rerender();
     toast(`${list.length} document${list.length > 1 ? 's' : ''} envoyé${list.length > 1 ? 's' : ''} à Claude${all.length > list.length ? ' (les 20 premiers)' : ''}`);
   },
-  'doc-keep': el => { const doc = docById(el.dataset.id); if (!doc) return; doc.status = 'kept'; delete doc.draft; persist(); closeSheet(); rerender(); toast('Photo gardée sans saisie'); },
+  'doc-keep': el => { const doc = docById(el.dataset.id); if (!doc) return; doc.status = 'kept'; delete doc.draft; persist(); closeSheet(); rerender(); toast('Document gardé sans saisie'); },
   'doc-del': el => armOrRun(el, 'doc:' + el.dataset.id, 'Confirmer la suppression', async () => { await deleteDoc(el.dataset.id); closeSheet(); rerender(); toast('Document supprimé'); }),
+  'doc-attach': el => { U.attachMore = false; docAttachSheet(el.dataset.id); },
+  'doc-attach-more': el => { U.attachMore = true; docAttachSheet(el.dataset.id); },
+  'doc-attach-to': el => {
+    const doc = docById(el.dataset.id); const e = D.events.find(x => x.id === el.dataset.ev); if (!doc || !e) return;
+    delete doc.role; const filled = attachDocTo(doc, e); persist(); closeSheet(); rerender();
+    toast(`Rattaché à « ${eventTitle(e)} »${filled.length ? ' · complété : ' + filled.join(', ') : ''}`);
+  },
+  'doc-detach': el => armOrRun(el, 'det:' + el.dataset.id, 'Confirmer', () => {
+    const doc = docById(el.dataset.id); if (!doc) return;
+    D.events.forEach(e => { if (Array.isArray(e.docs)) e.docs = e.docs.filter(x => x !== doc.id); });
+    doc.status = 'kept'; doc.eventId = null; persist(); closeViewer();
+    const f = $('#sheet-root form[data-form="event"]'); if (f) refreshStrip(f);
+    rerender(); toast('Document détaché : il reste dans Documents');
+  }),
   'doc-make': el => { const doc = docById(el.dataset.id); if (!doc) return; doc.status = 'inbox'; persist(); openEventForm({ docId: doc.id }); },
   tok: el => placeToken(el.dataset.v),
   'ocr-warm': () => { if (OCR.state === 'failed') OCR.state = 'idle'; OCR.ensure().then(() => { if (U.view === 'reglages') rerender(); toast('Moteur de lecture prêt'); }, () => { if (U.view === 'reglages') rerender(); toast('Le moteur de lecture ne démarre pas ici'); }); rerender(); }
@@ -4294,6 +4401,10 @@ document.addEventListener('change', ev => {
   if (t.id === 'cap-multi') { onCapture(t, null); return; }
   if (t.id === 'cap-km') { onCapture(t, 'km'); return; }
   if (t.id === 'cap-attach' || t.id === 'cap-attach-cam') { onAttach(t); return; }
+  if (t.dataset.docKind) {
+    const doc = docById(t.dataset.docKind); if (!doc) return; doc.kind = DOC_KINDS[t.value] ? t.value : null; doc.kindSet = true; persist();
+    const f = $('#sheet-root form[data-form="event"]'); if (f) refreshStrip(f); rerender(); toast(doc.kind ? `Nature : ${DOC_KINDS[doc.kind]}` : 'Nature effacée'); return;
+  }
   if (t.dataset.vf) {
     const v = veh(U.vid); if (!v) return;
     let val = t.value;
@@ -4329,7 +4440,7 @@ document.addEventListener('change', ev => {
     if (t.name === 'voyant') { const def = (VOYANTS.find(x => x[0] === t.value) || [])[2]; const c = def && f.querySelector(`input[name="couleur"][value="${def}"]`); if (c && !f.querySelector('input[name="couleur"]:checked')) { c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); } }
   }
   if (t.name === 'vehicleId' && t.form && ['reparation', 'entretien'].includes(t.form.dataset.type)) { const box = $('#obsfix-box'); if (box) box.innerHTML = obsFixBlock(t.value, t.form.dataset.id || null); }
-  if ((t.name === 'vehicleId' || t.name === 'date') && t.form && ['reparation', 'entretien'].includes(t.form.dataset.type) && !t.form.dataset.id) { const box = $('#merge-box'); const r = t.form.querySelector('input[name="vehicleId"]:checked'); if (box && r) box.innerHTML = mergeBox(r.value, t.form.dataset.type, t.form.elements.date.value, null); }
+  if ((t.name === 'vehicleId' || t.name === 'date') && t.form && t.form.dataset.form === 'event' && !t.form.dataset.id) { const box = $('#merge-box'); const r = t.form.querySelector('input[name="vehicleId"]:checked'); if (box && r) box.innerHTML = mergeBox(r.value, t.form.dataset.type, t.form.elements.date.value, null, !!t.form.dataset.doc); }
   if (t.form && t.form.dataset.type === 'pneus' && (t.name === 'op' || t.name === 'vehicleId')) {
     const box = $('#pn-box'); const f = t.form; const r = f.querySelector('input[name="vehicleId"]:checked'); const v = r && veh(r.value); const opr = f.querySelector('input[name="op"]:checked');
     if (box && v && opr) { const vals = formValues(f); if (t.name === 'vehicleId') delete vals.setId; box.innerHTML = pneusFields(opr.value, v, vals, {}, !f.dataset.id); }
