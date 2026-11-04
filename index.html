@@ -314,6 +314,34 @@ details.ocr[open] summary { border-bottom: 1px solid var(--line); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend i.sw { width: 16px; height: 4px; border-radius: 2px; }
+.legend i.sw.dash { background: repeating-linear-gradient(90deg, var(--ink-2) 0 3px, transparent 3px 7px); }
+/* Plan d'entretien par poste */
+#ch-ent text.lbl { font-weight: 700; fill: var(--ink); }
+.gauges { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; max-width: 320px; }
+.gline { display: grid; grid-template-columns: 52px 1fr 46px; align-items: center; gap: 8px; }
+.gline .gl { font-size: var(--t-xs); font-weight: 700; color: var(--ink-2); }
+.gline .gp { font-size: var(--t-xs); font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gline.full { grid-template-columns: 1fr 52px; row-gap: 4px; }
+.gline.full .gl { grid-column: 1 / -1; font-size: var(--t-sm); color: var(--ink); }
+.gauge { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.gauge i { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
+.gauge.g-soon i { background: var(--soon); } .gauge.g-late i { background: var(--late); }
+.gauge.presumed i { background: repeating-linear-gradient(135deg, var(--soon) 0 5px, transparent 5px 9px); }
+.row-sub.ref { color: var(--ink); font-weight: 600; }
+.visit { gap: 8px; }
+.visit-when { font-size: var(--t-lg, 20px); font-weight: 800; }
+.visit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.visit-list li { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; }
+.visit-list li span:last-child { white-space: nowrap; font-size: var(--t-sm); }
+.poste-sum { gap: 6px; }
+.poste-age { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.poste-sum .gauges { max-width: none; gap: 10px; }
+.poste-sum .gauge { height: 8px; }
+.ops-grp { display: flex; flex-direction: column; gap: 10px; }
+.ops-h { font-size: var(--t-xs, 12px); font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.ref-in { margin: -4px 0 2px 34px; }
+.ref-in input { min-height: 40px; font-size: 15px; }
 .chart { position: relative; width: 100%; }
 .chart svg { display: block; overflow: visible; }
 .chart svg text { fill: var(--chart-ink); font-family: var(--font); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -461,7 +489,7 @@ td .dot { margin-right: 6px; vertical-align: middle; width: 8px; height: 8px; }
 <script>
 'use strict';
 /* ============ Constantes ============ */
-const APP_VERSION = '0.8';
+const APP_VERSION = '0.9.1';
 const PALETTE = [
   { hex: '#0e7c86', name: 'Pétrole' }, { hex: '#3b6ea5', name: 'Bleu acier' }, { hex: '#1e3a8a', name: 'Marine' },
   { hex: '#7a4f9a', name: 'Prune' }, { hex: '#8e2c48', name: 'Bordeaux' }, { hex: '#b42318', name: 'Rouge' },
@@ -522,22 +550,41 @@ const CG_FIELDS = [
   ['V.7', 'Émissions de CO₂ (g/km)', { num: true }],
   ['V.9', 'Classe environnementale', { upper: true, hint: 'Contient la norme Euro, utile pour la vignette Crit’Air.' }]
 ];
-/* Programme d'entretien Opel (Astra K et Corsa E essence) : plan constructeur repris par Haynes et page Opel « Service & maintenance ».
-   Ordre et libellés de la page « Confirmation d'entretien » du carnet ; le service alterne intermédiaire (années impaires) et principal (années paires). */
-const OPEL_PLAN = [
+/* Plan d'entretien : chaque poste est suivi seul, opération ou équipement, avec son âge en temps et en kilomètres.
+   Intervalles du plan Opel (Astra K, Corsa E essence : Haynes, carnet, page Opel « Service & maintenance ») ; repères courants pour la climatisation, la batterie et les balais.
+   « remind » : le poste crée une échéance ; sinon la jauge sert de repère sans rappel. */
+const PLAN_KINDS = { op: 'Opérations', eq: 'Équipements' };
+const PLAN_CATALOG = [
+  { code: 'oil', kind: 'op', label: 'Vidange huile moteur et filtre', short: 'Vidange', months: 12, km: 30000, remind: true, src: 'opel' },
+  { code: 'brakefluid', kind: 'op', label: 'Liquide de frein', short: 'Liquide de frein', months: 24, remind: true, src: 'opel' },
+  { code: 'clim', kind: 'op', label: 'Climatisation : recharge et entretien', short: 'Climatisation', months: 24, remind: true, src: 'usage', hint: 'Repère courant des garages : tous les 2 ans. Une climatisation perd un peu de gaz chaque année, même peu utilisée.' },
+  { code: 'coolant', kind: 'op', label: 'Liquide de refroidissement', short: 'Liquide de refroidissement', remind: false, rule: 'Pas de vidange périodique prévue', hint: 'Liquide longue durée : pas de vidange périodique dans le plan Opel. Ajoute un intervalle si ton garage en conseille un.' },
+  { code: 'pollen', kind: 'eq', label: 'Filtre d’habitacle', short: 'Filtre d’habitacle', months: 24, km: 60000, remind: true, src: 'opel' },
+  { code: 'airfilter', kind: 'eq', label: 'Filtre à air', short: 'Filtre à air', months: 48, km: 60000, remind: true, src: 'opel' },
+  { code: 'plugs', kind: 'eq', label: 'Bougies', short: 'Bougies', months: 48, km: 60000, remind: true, src: 'opel' },
+  { code: 'battery', kind: 'eq', label: 'Batterie 12 V', short: 'Batterie', months: 60, remind: false, src: 'usage', hint: 'Durée de vie courante : 4 à 6 ans. Au-delà de 4 ans, fais-la tester avant l’hiver.' },
+  { code: 'keybat', kind: 'eq', label: 'Pile de télécommande', short: 'Pile de télécommande', months: 24, remind: true, src: 'opel' },
+  { code: 'wipers', kind: 'eq', label: 'Balais d’essuie-glace', short: 'Balais d’essuie-glace', months: 12, remind: false, src: 'usage', hint: 'À changer dès qu’ils laissent des traces ; repère : chaque année.' },
+  { code: 'padsF', kind: 'eq', rule: 'Selon l’usure', label: 'Plaquettes de frein avant', short: 'Plaquettes avant', remind: false, hint: 'Remplacées selon l’usure : pas d’intervalle fixe.' },
+  { code: 'discsF', kind: 'eq', rule: 'Selon l’usure', label: 'Disques de frein avant', short: 'Disques avant', remind: false, hint: 'Remplacés selon l’usure, souvent un changement de plaquettes sur deux.' },
+  { code: 'brakesR', kind: 'eq', rule: 'Selon l’usure', label: 'Garnitures de frein arrière', short: 'Freins arrière', remind: false, hint: 'Plaquettes ou mâchoires selon la voiture, remplacées selon l’usure.' },
+  { code: 'accbelt', kind: 'eq', rule: 'Selon l’usure', label: 'Courroie d’accessoires', short: 'Courroie d’accessoires', remind: false, hint: 'Remplacée selon l’usure : pas d’intervalle fixe dans le plan Opel.' }
+];
+/* Ancien plan (jusqu'à la v0.8), gardé pour la mise à niveau des données */
+const OPEL_PLAN_V5 = [
   { code: 'service', label: 'Service (vidange et filtre à huile)', km: 30000, months: 12 },
   { code: 'keybat', label: 'Pile de la télécommande', months: 24 },
   { code: 'pollen', label: 'Filtre à pollens', km: 60000, months: 24 },
   { code: 'airfilter', label: 'Cartouche de filtre à air', km: 60000, months: 48 },
-  { code: 'vbelt', label: 'Courroie en V nervurée (accessoires)', check: true, note: 'État contrôlé à chaque service, remplacée si usée.' },
-  { code: 'timing', label: 'Courroie crantée (distribution)', check: true, note: 'Distribution par chaîne sur ces moteurs essence : pas de remplacement prévu.' },
-  { code: 'fuelfilter', label: 'Filtre à carburant', check: true, note: 'Intégré au réservoir sur ces moteurs essence : pas de remplacement prévu.' },
-  { code: 'gearoil', label: 'Huile de boîte de vitesses', check: true, note: 'Niveau et fuites contrôlés ; pas de vidange prévue.' },
+  { code: 'vbelt', label: 'Courroie en V nervurée (accessoires)', check: true },
+  { code: 'timing', label: 'Courroie crantée (distribution)', check: true },
+  { code: 'fuelfilter', label: 'Filtre à carburant', check: true },
+  { code: 'gearoil', label: 'Huile de boîte de vitesses', check: true },
   { code: 'brakefluid', label: 'Liquide de freins', months: 24 },
-  { code: 'tyrekit', label: 'Kit de réparation des pneus', check: true, note: 'Date de péremption du produit d’étanchéité à vérifier.' },
-  { code: 'brakes', label: 'Garnitures de frein avant / arrière', check: true, note: 'Usure contrôlée à chaque service, remplacées selon l’usure.' },
+  { code: 'tyrekit', label: 'Kit de réparation des pneus', check: true },
+  { code: 'brakes', label: 'Garnitures de frein avant / arrière', check: true },
   { code: 'plugs', label: 'Bougies', km: 60000, months: 48 },
-  { code: 'coolant', label: 'Liquide de refroidissement', check: true, note: 'Protection antigel mesurée à chaque service ; pas de vidange périodique.' }
+  { code: 'coolant', label: 'Liquide de refroidissement', check: true }
 ];
 const CLEAN_PLAN = [
   { code: 'clean-ext', label: 'Nettoyage extérieur', weeks: 4, cat: 'nettoyage' },
@@ -762,9 +809,17 @@ let REV = 0; const MEMO = new Map(); let MEMO_REV = -1;
 function memo(key, fn) { if (MEMO_REV !== REV) { MEMO.clear(); MEMO_REV = REV; } if (!MEMO.has(key)) MEMO.set(key, fn()); return MEMO.get(key); }
 
 /* ============ Modèle ============ */
-const newPlanItem = label => ({ id: uid(), label, km: null, months: null, weeks: null, lastDate: null, lastKm: null });
-const newPlanFrom = (def, withIntervals) => Object.assign({ id: uid(), km: null, months: null, weeks: null, lastDate: null, lastKm: null }, def, withIntervals ? {} : { km: null, months: null });
-const defaultPlan = marque => OPEL_PLAN.map(p => newPlanFrom(p, /opel|vauxhall/i.test(marque || ''))).concat(CLEAN_PLAN.map(p => newPlanFrom(p, true)));
+const newPlanItem = (label, kind) => ({ id: uid(), code: null, kind: kind === 'op' ? 'op' : 'eq', label, km: null, months: null, weeks: null, remind: true, lastDate: null, lastKm: null, ref: '' });
+function newPlanFrom(def, opel) {
+  const it = Object.assign({ id: uid(), km: null, months: null, weeks: null, lastDate: null, lastKm: null, ref: '' }, def);
+  delete it.hint; delete it.src; delete it.short; delete it.rule;
+  if (def.src === 'opel' && !opel) { it.km = null; it.months = null; }
+  return it;
+}
+const defaultPlan = marque => PLAN_CATALOG.map(p => newPlanFrom(p, /opel|vauxhall/i.test(marque || ''))).concat(CLEAN_PLAN.map(p => newPlanFrom(p, true)));
+const planDef = it => (it && it.code && PLAN_CATALOG.find(p => p.code === it.code)) || null;
+const planShort = it => (planDef(it) || {}).short || (it ? it.label : '');
+const planKind = it => it.cat === 'nettoyage' ? 'clean' : (it.kind === 'op' ? 'op' : 'eq');
 function newVehicle(o) {
   return Object.assign({
     id: uid(), surnom: '', couleur: PALETTE[0].hex, marque: '', modele: '', annee: null, couleurCarrosserie: '', carburant: 'SP95-E10',
@@ -776,7 +831,7 @@ const V1_LABELS = { 'Révision et vidange': 'service', 'Filtre à air': 'airfilt
 function upgradePlan(v, d) {
   const opel = isOpel(v);
   v.plan.forEach(p => { if (!p.code && V1_LABELS[p.label]) p.code = V1_LABELS[p.label]; });
-  for (const def of OPEL_PLAN) {
+  for (const def of OPEL_PLAN_V5) {
     const it = v.plan.find(p => p.code === def.code);
     if (!it) { v.plan.push(newPlanFrom(def, opel)); continue; }
     if (V1_LABELS[it.label] === def.code) it.label = def.label;
@@ -790,13 +845,57 @@ function upgradePlan(v, d) {
     d.events.forEach(e => { if (Array.isArray(e.ops) && e.ops.includes(demoRev.id)) { e.ops = e.ops.map(o => o === demoRev.id ? svc.id : o); if (e.demo && !e.service) e.service = 'principal'; } });
     v.plan = v.plan.filter(p => p !== demoRev);
   }
-  const rank = c => { const i = OPEL_PLAN.findIndex(p => p.code === c); return i >= 0 ? i : CLEAN_PLAN.some(p => p.code === c) ? 900 : 500; };
+  const rank = c => { const i = OPEL_PLAN_V5.findIndex(p => p.code === c); return i >= 0 ? i : CLEAN_PLAN.some(p => p.code === c) ? 900 : 500; };
   v.plan.sort((a, b) => rank(a.code) - rank(b.code));
   if (opel && /astra|corsa/i.test(v.modele || '') && !v.tech.distribution) v.tech.distribution = 'chaine';
 }
+/* v0.9 : plan par poste. Les identifiants des postes sont conservés : les saisies qui les cochent restent valables. */
+const PLAN_V6_MAP = { service: 'oil', vbelt: 'accbelt', keybat: 'keybat', pollen: 'pollen', airfilter: 'airfilter', brakefluid: 'brakefluid', plugs: 'plugs', coolant: 'coolant' };
+const PLAN_V6_DROP = ['timing', 'fuelfilter', 'gearoil', 'tyrekit'];
+function migratePlan6(v, d) {
+  const opel = isOpel(v); const evs = d.events.filter(e => e.vehicleId === v.id);
+  const used = id => evs.some(e => Array.isArray(e.ops) && e.ops.includes(id));
+  const out = []; let brakesOld = null;
+  const asCustom = it => { it.code = null; it.kind = 'eq'; it.remind = false; it.km = null; it.months = null; delete it.check; it.note = 'Poste de l’ancien plan, gardé parce qu’une saisie ou une date s’y rapporte.'; out.push(it); };
+  for (const it of v.plan) {
+    if (it.cat === 'nettoyage') { out.push(it); continue; }
+    const nc = PLAN_V6_MAP[it.code];
+    if (nc) {
+      const def = PLAN_CATALOG.find(p => p.code === nc); const old = OPEL_PLAN_V5.find(p => p.code === it.code);
+      if (!it.label || (old && it.label === old.label) || it.label === 'Service (vidange et filtre à huile)') it.label = def.label;
+      it.code = nc; it.kind = def.kind; it.remind = def.remind !== false; it.ref = it.ref || '';
+      delete it.check; delete it.note; out.push(it); continue;
+    }
+    if (it.code === 'brakes') { brakesOld = it; continue; }
+    if (PLAN_V6_DROP.includes(it.code)) { if (used(it.id) || validDate(it.lastDate)) asCustom(it); continue; }
+    if (it.code && PLAN_CATALOG.some(p => p.code === it.code)) { if (!out.some(p => p.code === it.code)) out.push(it); continue; }
+    it.kind = it.kind === 'op' ? 'op' : 'eq'; if (it.remind === undefined) it.remind = true; it.ref = it.ref || ''; delete it.check; out.push(it);
+  }
+  for (const def of PLAN_CATALOG) if (!out.some(p => p.code === def.code)) out.push(newPlanFrom(def, opel));
+  const idOf = code => out.find(p => p.code === code).id;
+  if (brakesOld) {
+    let left = validDate(brakesOld.lastDate);
+    evs.forEach(e => {
+      if (!Array.isArray(e.ops) || !e.ops.includes(brakesOld.id)) return;
+      const txt = norm([e.libelle, e.notes].join(' ')).replace(/«?\s*avant\s*»?\s*barre/g, '');
+      const codes = [];
+      if (/arriere|\bar\b/.test(txt)) codes.push('brakesR');
+      if (/avant|\bav\b/.test(txt)) codes.push('padsF');
+      if (/disque/.test(txt) && !codes.includes('brakesR')) codes.push('discsF');
+      if (!codes.length) { left = true; return; }
+      e.ops = Array.from(new Set(e.ops.filter(x => x !== brakesOld.id).concat(codes.map(idOf))));
+    });
+    if (left) { asCustom(brakesOld); brakesOld.label = 'Garnitures de frein (avant ou arrière, à préciser)'; brakesOld.note = 'Ton ancien plan ne distinguait pas l’avant et l’arrière. Ouvre chaque saisie de l’historique, coche « Plaquettes de frein avant » ou « Garnitures de frein arrière » à la place de ce poste, puis retire-le.'; }
+  }
+  /* Saisies du carnet : le type de service vaut vidange */
+  const oilId = idOf('oil');
+  evs.forEach(e => { if (e.type === 'entretien' && SERVICE_TYPES[e.service] && Array.isArray(e.ops) && !e.ops.includes(oilId)) e.ops.push(oilId); else if (e.type === 'entretien' && SERVICE_TYPES[e.service] && !Array.isArray(e.ops)) e.ops = [oilId]; });
+  const rank = p => p.cat === 'nettoyage' ? 900 : (i => i >= 0 ? i : 500)(PLAN_CATALOG.findIndex(c => c.code === p.code));
+  v.plan = out.sort((a, b) => rank(a) - rank(b));
+}
 function freshData() {
   return {
-    schema: 5,
+    schema: 6,
     vehicles: [
       newVehicle({ id: 'astra', surnom: 'Astra', couleur: '#0e7c86', marque: 'Opel', modele: 'Astra Sports Tourer', annee: 2018, tech: { distribution: 'chaine' } }),
       newVehicle({ id: 'corsa', surnom: 'Corsa', couleur: '#4a5a63', marque: 'Opel', modele: 'Corsa', annee: 2015, couleurCarrosserie: 'Grise', tech: { distribution: 'chaine' } })
@@ -825,7 +924,8 @@ function migrate(d) {
     else e.op = 'autre';
   });
   if (!(d.schema >= 5)) d.vehicles.forEach(v => { v.assurance.crmByYear = v.assurance.crmByYear || {}; });
-  d.schema = 5;
+  if (!(d.schema >= 6)) d.vehicles.forEach(v => migratePlan6(v, d));
+  d.schema = 6;
   return d;
 }
 const veh = id => D.vehicles.find(v => v.id === id) || null;
@@ -834,15 +934,35 @@ const groupOf = e => e.type === 'depense' ? (DEP_CATS[e.cat] || DEP_CATS.autre).
 const subOf = e => e.type === 'depense' ? (DEP_CATS[e.cat] || DEP_CATS.autre).label : (TYPES[e.type] ? TYPES[e.type].sub : '');
 const iconOf = e => e.type === 'depense' ? (DEP_CATS[e.cat] || DEP_CATS.autre).icon : (TYPES[e.type] ? TYPES[e.type].icon : 'receipt');
 const docById = id => D.docs.find(x => x.id === id) || null;
+/* Un document peut appartenir à plusieurs saisies : un échéancier qui couvre deux voitures */
+const docEvents = x => Array.isArray(x.eventIds) && x.eventIds.length ? x.eventIds : x.eventId ? [x.eventId] : [];
+const docVehicles = x => Array.isArray(x.vehicleIds) && x.vehicleIds.length ? x.vehicleIds : x.vehicleId ? [x.vehicleId] : [];
+function unlinkDocEvent(x, evId) {
+  const rest = docEvents(x).filter(i => i !== evId && D.events.some(e => e.id === i));
+  if (!rest.length) { x.status = 'kept'; x.eventId = null; delete x.eventIds; delete x.vehicleIds; return; }
+  x.eventId = rest[0]; const vs = Array.from(new Set(rest.map(i => (D.events.find(e => e.id === i) || {}).vehicleId).filter(Boolean)));
+  if (rest.length > 1) x.eventIds = rest; else delete x.eventIds;
+  if (vs.length > 1) x.vehicleIds = vs; else { delete x.vehicleIds; if (vs[0]) x.vehicleId = vs[0]; }
+}
 const inboxDocs = () => D.docs.filter(x => x.status === 'inbox' || x.status === 'queued' || x.status === 'reading');
 const fuelShort = f => (f || '').replace('SP95-E10', 'E10');
+/* Postes cochés par une saisie, en clair : « Vidange, filtre d’habitacle +2 » */
+function opsText(e, n = 3) {
+  const v = veh(e.vehicleId); if (!v || !Array.isArray(e.ops) || !e.ops.length) return '';
+  const l = e.ops.map(id => v.plan.find(p => p.id === id)).filter(p => p && p.cat !== 'nettoyage').map(planShort);
+  if (!l.length) return '';
+  const head = l.slice(0, n).map((x, i) => i ? x.charAt(0).toLowerCase() + x.slice(1) : x).join(', ');
+  return head + (l.length > n ? ` +${l.length - n}` : '');
+}
+/* Ce que la saisie t'a coûté : la part payée par l'assurance est retirée */
+const costOf = e => { const m = num(e.montant); if (m == null) return null; const a = num(e.assurPart); return a ? Math.max(0, m - a) : m; };
 function eventTitle(e) {
   switch (e.type) {
     case 'plein': { const v = veh(e.vehicleId); const f = e.carburant && (!v || e.carburant !== v.carburant) ? ' · ' + fuelShort(e.carburant) : ''; return `Plein · ${fmtN(num(e.litres), 1)} L${f}${e.complet === false ? ' (partiel)' : ''}`; }
     case 'km': return `Relevé · ${fmtN(num(e.km))} km`;
-    case 'entretien': return (SERVICE_TYPES[e.service] || 'Entretien') + (e.libelle && !(e.service && /^service/i.test(e.libelle)) ? ' · ' + e.libelle : !e.service && e.garage ? ' · ' + e.garage : '');
+    case 'entretien': { const ops = opsText(e); return (num(e.repMontant) ? 'Entretien et réparation' : 'Entretien') + (ops ? ' · ' + ops : e.libelle ? ' · ' + e.libelle : e.garage ? ' · ' + e.garage : ''); }
     case 'nettoyage': { const v = veh(e.vehicleId); const codes = (e.ops || []).map(id => { const p = v && v.plan.find(x => x.id === id); return p && p.code; }); const ex = codes.includes('clean-ext'), inn = codes.includes('clean-int'); return 'Nettoyage' + (ex && inn ? ' intérieur et extérieur' : ex ? ' extérieur' : inn ? ' intérieur' : '') + (e.libelle ? ' · ' + e.libelle : ''); }
-    case 'reparation': return 'Réparation' + (e.libelle ? ' · ' + e.libelle : '');
+    case 'reparation': { const ops = opsText(e); return 'Réparation' + (e.libelle ? ' · ' + e.libelle : ops ? ' · ' + ops : ''); }
     case 'ct': return 'Contrôle technique · ' + (e.resultat === 'A' ? 'favorable' : e.resultat ? 'défavorable' : 'résultat à saisir');
     case 'assurance': return 'Assurance' + (e.assureur ? ' · ' + e.assureur : '');
     case 'depense': return (DEP_CATS[e.cat] || DEP_CATS.autre).label + (e.libelle ? ' · ' + e.libelle : '');
@@ -1107,6 +1227,13 @@ function allocations(e) {
     }
     return out;
   }
+  if ((e.type === 'entretien' || e.type === 'reparation') && (num(e.repMontant) || num(e.assurPart))) {
+    const rep = e.type === 'reparation' ? m : Math.min(m, Math.max(0, num(e.repMontant) || 0)); const ent = m - rep;
+    const ins = Math.min(rep, Math.max(0, num(e.assurPart) || 0)); const mo = e.date.slice(0, 7); const out = [];
+    if (ent > 0.004) out.push({ month: mo, amount: ent, group: g, sub: TYPES.entretien.sub, vid: e.vehicleId });
+    if (rep - ins > 0.004) out.push({ month: mo, amount: rep - ins, group: g, sub: TYPES.reparation.sub, vid: e.vehicleId });
+    return out;
+  }
   return [{ month: e.date.slice(0, 7), amount: m, group: g, sub: subOf(e), vid: e.vehicleId }];
 }
 function costIn(vids, fromKey, toKey) {
@@ -1154,31 +1281,28 @@ function computeEcheances() {
       if (first >= t) push(Object.assign({}, ctBase, { dueDate: first, soonDays: 60, detail: 'Premier contrôle : 4 ans après la première immatriculation.' }));
       else push(Object.assign({}, ctBase, { unknown: true, brief: 'dernier contrôle inconnu', detail: 'Ajoute ton dernier contrôle technique pour calculer le prochain.' }));
     } else push(Object.assign({}, ctBase, { unknown: true, brief: 'dernier contrôle inconnu', detail: 'Ajoute ton dernier contrôle technique, ou la date B de la carte grise.' }));
-    /* Plan d'entretien (programme Opel, éléments ajoutés) et nettoyage */
-    const unknownPlan = []; const nt = nextServiceType(v); let prog = null;
+    /* Plan d'entretien : un poste avec intervalle et rappel = une échéance ; nettoyage */
+    const unknownPlan = [];
     for (const it of v.plan) {
       const clean = it.cat === 'nettoyage';
       const ik = num(it.km), im = num(it.months), iw = num(it.weeks);
       if (!ik && !im && !iw) continue;
+      if (!clean && it.remind === false) continue;
       const L = lastDone(v, it, pts);
-      const isSvc = it.code === 'service';
-      const label = isSvc && nt ? SERVICE_TYPES[nt.type] : it.label;
-      const base = { v, key: 'plan:' + it.id, short: label, label, clean, planId: it.id, action: clean ? { type: 'clean', op: it.id } : { type: 'entretien', op: it.id } };
+      const base = { v, key: 'plan:' + it.id, short: clean ? it.label : planShort(it), label: it.label, clean, planId: it.id, action: clean ? { type: 'clean', op: it.id } : { type: 'entretien', op: it.id } };
       if (!L) {
         if (clean) push(Object.assign({}, base, { unknown: true, brief: 'pas encore noté', detail: 'Note le prochain nettoyage pour lancer le rappel.' }));
         else unknownPlan.push(it);
         continue;
       }
       const parts = []; if (L.date) parts.push(`le ${fmtDate(L.date)}`); if (L.km != null && !clean) parts.push(`à ${fmtN(L.km)} km`);
-      const extra = {};
-      if (isSvc) { prog = prog || programFor(v, 1); const n0 = prog.list[0]; if (n0) extra.ops = n0.ops.map(o => o.label); if (nt && !nt.sure) extra.guess = true; }
-      push(Object.assign({}, base, extra, {
+      push(Object.assign({}, base, {
         dueDate: L.date ? (iw ? addDays(L.date, Math.round(iw * 7)) : im ? addMonths(L.date, im) : null) : null,
         dueKm: !clean && ik && L.km != null ? L.km + ik : null, kmN, rate, soonDays: clean ? 7 : undefined,
-        detail: 'Dernière fois ' + parts.join(' ') + '.'
+        detail: (clean ? 'Dernière fois ' : 'Dernier remplacement ') + parts.join(' ') + '.' + (intervalText(it) ? ` Intervalle : ${intervalText(it)}.` : '')
       }));
     }
-    if (unknownPlan.length) push({ v, key: 'plan-unknown', short: 'Plan d’entretien', label: 'Dates d’entretien à compléter', unknown: true, brief: `${unknownPlan.length} élément${unknownPlan.length > 1 ? 's' : ''} sans date`, detail: 'Sans date de dernière intervention, pas d’échéance pour : ' + unknownPlan.map(p => p.label.toLowerCase()).join(', ') + '. Saisis ton dernier service ou complète ces dates dans le plan d’entretien.', action: { type: 'plan' } });
+    if (unknownPlan.length) push({ v, key: 'plan-unknown', short: 'Plan d’entretien', label: 'Dates d’entretien à compléter', unknown: true, brief: `${unknownPlan.length} poste${unknownPlan.length > 1 ? 's' : ''} sans date`, detail: (validDate(v.achat && v.achat.date) ? `Aucun remplacement noté depuis l’achat (${fmtDate(v.achat.date)}) pour : ` : 'Sans date de dernier remplacement, pas d’échéance pour : ') + unknownPlan.map(p => p.label.toLowerCase()).join(', ') + '. Note la date dans la fiche du poste si tu la connais ; sinon, ces postes sont probablement à faire.', action: { type: 'plan' } });
     /* Remarques en cours, et déclaration d'accident (5 jours ouvrés, Code des assurances L113-2) */
     for (const e of vehEvents(v.id).filter(e => e.type === 'remarque' && validDate(e.date))) {
       if (e.cat === 'accident' && e.statut !== 'resolu' && !validDate(e.declare) && !e.sinistre && diffDays(e.date, t) <= 60)
@@ -1239,52 +1363,62 @@ function computeEcheances() {
   return out.sort((a, b) => STATUS[a.status].order - STATUS[b.status].order || String(a.eff || '9999').localeCompare(String(b.eff || '9999')));
 }
 let EC = [];
-/* Dernière intervention d'un élément du plan : la date saisie dans le plan ou la saisie la plus récente qui le coche */
+/* Dernière intervention d'un poste : la date notée dans sa fiche ou la saisie la plus récente qui le coche */
 function planDoneEvents(v, it) {
   return vehEvents(v.id).filter(e => validDate(e.date) && ((Array.isArray(e.ops) && e.ops.includes(it.id)) ||
-    (it.code === 'service' && e.type === 'entretien' && (SERVICE_TYPES[e.service] || /r[ée]vision|vidange|service/i.test(e.libelle || ''))) ||
     (it.code === 'clean-ext' && e.type === 'depense' && e.cat === 'lavage')));
 }
 function lastDone(v, it, pts) {
-  let ld = validDate(it.lastDate) ? it.lastDate : null, lk = num(it.lastKm);
+  let ld = validDate(it.lastDate) ? it.lastDate : null, lk = num(it.lastKm), ev = null;
   const done = planDoneEvents(v, it).sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-  if (done && (!ld || done.date >= ld)) { ld = done.date; const k = num(done.km) ?? kmAt(v.id, done.date, pts || kmPoints(v.id)); lk = k == null ? null : Math.round(k); }
-  return ld || lk != null ? { date: ld, km: lk } : null;
+  if (done && (!ld || done.date >= ld)) { ld = done.date; ev = done; const k = num(done.km) ?? kmAt(v.id, done.date, pts || kmPoints(v.id)); lk = k == null ? null : Math.round(k); }
+  return ld || lk != null ? { date: ld, km: lk, ev } : null;
 }
-/* Opel alterne service intermédiaire (1er, 3e, 5e…) et service principal (2e, 4e…) */
-function nextServiceType(v) {
-  const last = vehEvents(v.id).filter(e => e.type === 'entretien' && SERVICE_TYPES[e.service] && validDate(e.date)).sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-  if (last) return { type: last.service === 'principal' ? 'intermediaire' : 'principal', sure: true };
-  if (validDate(v.cg && v.cg.B)) { const n = Math.floor(diffDays(v.cg.B, todayStr()) / 365.25) + 1; return { type: n % 2 === 0 ? 'principal' : 'intermediaire', sure: false }; }
-  return null;
-}
-/* Programme des prochains services, simulé service après service */
-function programFor(v, count = 5) {
-  const pts = kmPoints(v.id), rate = kmRate(v.id, pts) || 0, t = todayStr(), lp = pts.at(-1);
-  const items = v.plan.filter(p => p.cat !== 'nettoyage' && (num(p.km) || num(p.months)));
-  const svc = items.find(p => p.code === 'service'); if (!svc) return { list: [], reason: 'nosvc' };
-  const dateForKm = k => rate > 0 && lp ? addDays(lp.date, Math.max(0, Math.round((k - lp.km) / rate))) : null;
-  const kmOn = d => { const k = kmAt(v.id, d, pts); return k == null ? null : Math.round(k); };
-  const dueOf = (it, L) => { if (!L) return null; const a = L.date && num(it.months) ? addMonths(L.date, num(it.months)) : null; const b = L.km != null && num(it.km) ? dateForKm(L.km + num(it.km)) : null; return [a, b].filter(Boolean).sort()[0] || null; };
-  const st = new Map(items.map(it => [it.id, lastDone(v, it, pts)]));
-  const first = dueOf(svc, st.get(svc.id)); if (!first) return { list: [], reason: st.get(svc.id) ? 'nodate' : 'nolast' };
-  const nt = nextServiceType(v); let type = nt ? nt.type : null;
-  const list = []; let when = first < t ? t : first;
-  for (let k = 0; k < count; k++) {
-    const kmW = kmOn(when); const ops = [];
-    for (const it of items) {
-      const L = st.get(it.id); const due = dueOf(it, L);
-      /* Sans date connue, un élément au rythme de 2 ou 4 ans attend le premier service principal, comme dans le plan Opel */
-      /* Un élément est fait à ce service s'il échoit dans les 45 jours, ou s'il serait en retard de plus d'un mois au service suivant */
-      const nextWhen = addMonths(when, num(svc.months) || 12);
-      const include = it === svc || (!L ? (!type || type === 'principal' || !(num(it.months) && num(it.months) % 24 === 0)) : (due != null && (due <= addDays(when, 45) || due <= addDays(nextWhen, -31))));
-      if (include) { ops.push(it); st.set(it.id, { date: when, km: kmW }); }
-    }
-    list.push({ date: when, km: kmW, type, ops, overdue: k === 0 && first < t });
-    type = type === 'principal' ? 'intermediaire' : type === 'intermediaire' ? 'principal' : null;
-    const nx = dueOf(svc, st.get(svc.id)); if (!nx || nx <= when) break; when = nx;
+/* Âge d'un poste en temps et en kilomètres, et part de son intervalle déjà consommée.
+   Jamais remplacé : « au moins » depuis l'achat de la voiture (ou sa première immatriculation). */
+function posteState(v, it, pts) {
+  pts = pts || kmPoints(v.id);
+  const t = todayStr(); const L = lastDone(v, it, pts);
+  let base = L, presumed = false;
+  if (!L) {
+    const a = v.achat || {}; const d0 = validDate(a.date) ? a.date : validDate(v.cg && v.cg.B) ? v.cg.B : null;
+    if (d0) { const k0 = num(a.km) ?? (d0 === v.cg.B ? 0 : kmAt(v.id, d0, pts)); base = { date: d0, km: k0 == null ? null : Math.round(k0) }; presumed = true; }
   }
-  return { list, sure: nt ? nt.sure : false };
+  const kn = kmAt(v.id, t, pts); const kNow = kn == null ? null : Math.round(kn);
+  const days = base && base.date ? Math.max(0, diffDays(base.date, t)) : null;
+  const kmSince = base && base.km != null && kNow != null ? Math.max(0, kNow - base.km) : null;
+  const im = num(it.months), ik = num(it.km), iw = num(it.weeks);
+  const pT = days != null && (im || iw) ? days / (im ? im * 30.44 : iw * 7) : null;
+  const pK = kmSince != null && ik ? kmSince / ik : null;
+  const pct = pT == null && pK == null ? null : Math.max(pT ?? 0, pK ?? 0);
+  const dueDate = base && base.date && !presumed ? (im ? addMonths(base.date, im) : iw ? addDays(base.date, Math.round(iw * 7)) : null) : null;
+  const dueKm = base && base.km != null && !presumed && ik ? base.km + ik : null;
+  const hasInt = !!(im || ik || iw);
+  const gOf = p => p == null ? null : p >= 1 ? (it.remind === false || presumed ? 'soon' : 'late') : p >= 0.85 ? 'soon' : 'ok';
+  const gauge = gOf(pct), gT = gOf(pT), gK = gOf(pK);
+  return { it, L, base, presumed, days, kmSince, pct, pT, pK, gT, gK, im, ik, iw, dueDate, dueKm, hasInt, gauge, ref: (L && L.ev && L.ev.refs && L.ev.refs[it.id]) || it.ref || '' };
+}
+/* Âge lisible : « 10 mois · 15 300 km » */
+function posteAge(s) {
+  if (!s.base) return '';
+  const a = s.days == null ? '' : s.days === 0 ? 'aujourd’hui' : s.days < 45 ? `${s.days} j` : s.days < 730 ? `${Math.round(s.days / 30.44)} mois` : (y => { const r = Math.round((s.days / 30.44) % 12); return `${y} an${y > 1 ? 's' : ''}${r && y < 6 ? ` ${r} mois` : ''}`; })(Math.floor(s.days / 365.25));
+  return [a, s.kmSince != null ? fmtN(s.kmSince) + ' km' : ''].filter(Boolean).join(' · ');
+}
+/* Intervalle réel entre deux remplacements d'un poste */
+function posteHistory(v, it, pts) {
+  pts = pts || kmPoints(v.id);
+  const kmOf = e => { const k = num(e.km) ?? kmAt(v.id, e.date, pts); return k == null ? null : Math.round(k); };
+  const list = planDoneEvents(v, it).sort((a, b) => a.date.localeCompare(b.date)).map(e => ({ e, date: e.date, km: kmOf(e) }));
+  list.forEach((x, i) => { const p = list[i - 1]; if (!p) return; x.dDays = diffDays(p.date, x.date); x.dKm = x.km != null && p.km != null ? x.km - p.km : null;
+    const im = num(it.months), ik = num(it.km); x.late = !!((im && x.date > addDays(addMonths(p.date, im), 30)) || (ik && x.dKm != null && x.dKm > ik + 1500)); });
+  return list;
+}
+/* Prochain passage au garage : l'échéance la plus proche, et ce qui tombe dans les 3 mois suivants */
+function nextVisit(v) {
+  const list = EC.filter(x => x.v && x.v.id === v.id && x.key.startsWith('plan:') && !x.clean && x.status !== 'unknown' && x.eff).sort((a, b) => a.eff.localeCompare(b.eff));
+  if (!list.length) return null;
+  const first = list[0]; const lim = addMonths(first.eff < todayStr() ? todayStr() : first.eff, 3);
+  return { first, items: list.filter(x => x.eff <= lim) };
 }
 function echShort(x) {
   if (x.status === 'unknown') return `${x.short} : à compléter`;
@@ -1329,8 +1463,11 @@ function loadDemo() {
       last = i;
     }
     const rd = addDays(addMonths(start, c.rev), 4);
-    const svcOps = v.plan.filter(p => ['service', 'pollen', 'brakefluid', 'keybat'].includes(p.code)).map(p => p.id);
-    add({ vehicleId: c.id, type: 'entretien', date: rd, km: kmOn(rd), montant: c.revCost, garage: 'Garage (exemple)', libelle: '', service: 'principal', huileQualite: c.id === 'astra' ? 'dexos1 Gen2' : 'dexos 2', huileViscosite: '5W-30', antigel: -30, ops: svcOps });
+    const pid = code => (v.plan.find(p => p.code === code) || {}).id;
+    const svcOps = ['oil', 'pollen', 'brakefluid', 'keybat'].map(pid).filter(Boolean);
+    add({ vehicleId: c.id, type: 'entretien', date: rd, km: kmOn(rd), montant: c.revCost, garage: 'Garage (exemple)', libelle: '', huileQualite: c.id === 'astra' ? 'dexos1 Gen2' : 'dexos 2', huileViscosite: '5W-30', ops: svcOps });
+    if (c.id === 'corsa') { const bd = addDays(addMonths(start, 7), 15); const b = pid('battery'); if (b) add({ vehicleId: c.id, type: 'reparation', date: bd, km: kmOn(bd), montant: 129, garage: 'Centre auto (exemple)', libelle: '', ops: [b], refs: { [b]: 'Varta Blue Dynamic E11, 74 Ah, 680 A' } }); }
+    if (c.id === 'astra') { const cl = addDays(addMonths(start, 15), 3); const k = pid('clim'); if (k) add({ vehicleId: c.id, type: 'entretien', date: cl, km: kmOn(cl), montant: 89, garage: 'Garage (exemple)', libelle: '', ops: [k] }); }
     const ci = v.plan.find(p => p.code === 'clean-int'); if (ci) add({ vehicleId: c.id, type: 'nettoyage', date: addDays(t, c.id === 'astra' ? -40 : -75), ops: [ci.id], montant: null, libelle: 'À la maison' });
     const cd = addDays(addMonths(start, c.ct), 9);
     add({ vehicleId: c.id, type: 'ct', date: cd, km: kmOn(cd), montant: c.ctCost, centre: 'Centre (exemple)', resultat: 'A', defaillances: '' });
@@ -1347,7 +1484,7 @@ function loadDemo() {
   }
   if (veh('corsa')) add(Object.assign({ vehicleId: 'corsa', type: 'pneus', date: addDays(addMonths(start, 2), 9), montant: 204, libelle: '' }, DEMO_TYRE.corsa));
   if (veh('corsa')) {
-    const d = addDays(addMonths(start, 14), 2); const rep = add({ vehicleId: 'corsa', type: 'reparation', date: d, montant: 168, libelle: 'Plaquettes avant', garage: 'Garage (exemple)', ops: [] });
+    const d = addDays(addMonths(start, 14), 2); const pf = (veh('corsa').plan.find(p => p.code === 'padsF') || {}).id; const rep = add({ vehicleId: 'corsa', type: 'reparation', date: d, montant: 168, libelle: '', garage: 'Garage (exemple)', ops: pf ? [pf] : [] });
     add({ vehicleId: 'corsa', type: 'remarque', cat: 'anomalie', nature: 'Bruit', date: addDays(d, -12), libelle: 'grincement au freinage, à l’avant', grav: 'verifier', statut: 'resolu', resolDate: d, resolBy: rep.id, montant: null, notes: '' });
     add({ vehicleId: 'corsa', type: 'remarque', cat: 'carrosserie', nature: 'Rayure', zone: 'Portière arrière droite', lieu: 'Parking du supermarché', date: addDays(t, -9), libelle: '', grav: 'surveiller', statut: 'ouvert', montant: null, notes: 'Rayure d’environ 10 cm, constatée en revenant à la voiture.' });
   }
@@ -1420,8 +1557,8 @@ function segCars(current, action, allLabel) {
 }
 function eventRow(e) {
   const v = veh(e.vehicleId);
-  const amt = e.type === 'km' || num(e.montant) == null ? '' : fmtEur(num(e.montant), 2);
-  const sub = [fmtDateShort(e.date), v ? v.surnom : 'Voiture supprimée', num(e.km) != null && e.type !== 'km' ? fmtN(num(e.km)) + ' km' : '', e.type === 'remarque' ? (obsOpen(e) ? 'en cours' : 'réglée') : ''].filter(Boolean).join(' · ');
+  const amt = e.type === 'km' || num(e.montant) == null ? '' : fmtEur(costOf(e), 2);
+  const sub = [fmtDateShort(e.date), v ? v.surnom : 'Voiture supprimée', num(e.km) != null && e.type !== 'km' ? fmtN(num(e.km)) + ' km' : '', e.type === 'remarque' ? (obsOpen(e) ? 'en cours' : 'réglée') : '', num(e.assurPart) ? `assurance ${fmtEur(num(e.assurPart))}` : ''].filter(Boolean).join(' · ');
   const clip = e.docs && e.docs.length ? `<span class="clip" title="Photo jointe">${ic('attach', 14, 2.2)}</span>` : '';
   return `<li><button class="row" data-action="edit-event" data-id="${e.id}">
     <span class="tile car" style="--cc:${v ? v.couleur : '#687072'}">${ic(iconOf(e), 19)}</span>
@@ -1545,18 +1682,16 @@ function viewEcheances() {
 }
 function openEchSheet(key, vid) {
   const x = EC.find(e => e.key === key && (e.v ? e.v.id : '') === (vid || '')); if (!x) return;
-  const btnLabel = { pneus: 'Voir les pneus', 'pneus-remontage': 'Saisir le remontage', ct: 'Saisir un contrôle technique', entretien: x.ops ? 'Saisir ce service' : 'Marquer comme fait', km: 'Relever le kilométrage', assurance: 'Ouvrir l’assurance', reminder: 'Marquer comme fait', backup: 'Exporter une sauvegarde', plan: 'Compléter le plan d’entretien' }[x.action.type] || 'Ouvrir';
+  const btnLabel = { pneus: 'Voir les pneus', 'pneus-remontage': 'Saisir le remontage', ct: 'Saisir un contrôle technique', entretien: 'Saisir l’intervention', km: 'Relever le kilométrage', assurance: 'Ouvrir l’assurance', reminder: 'Marquer comme fait', backup: 'Exporter une sauvegarde', plan: 'Compléter le plan d’entretien' }[x.action.type] || 'Ouvrir';
   const lines = echLines(x);
   const actions = x.action.type === 'pressure'
     ? `<button class="btn line" data-action="add" data-type="pneus" data-op="controle" data-vid="${x.v.id}">Avec l’usure</button><button class="btn primary grow" data-action="pressure-done" data-vid="${x.v.id}">Fait aujourd’hui</button>`
     : x.clean
     ? `<button class="btn line" data-action="add-clean" data-vid="${x.v.id}" data-op="${esc(x.action.op)}">Avec un coût</button><button class="btn primary grow" data-action="clean-done" data-vid="${x.v.id}" data-op="${esc(x.action.op)}">Fait aujourd’hui</button>`
-    : `${x.action.type === 'entretien' && x.v ? `<button class="btn line" data-action="ech-plan" data-vid="${x.v.id}">Plan</button>` : ''}<button class="btn primary grow" data-action="ech-do" data-type="${x.action.type}" data-vid="${x.v ? x.v.id : ''}" data-op="${esc(x.action.op || '')}" data-id="${esc(x.action.id || '')}" data-set="${esc(x.action.set || '')}">${btnLabel}</button>`;
+    : `${x.action.type === 'entretien' && x.v ? `<button class="btn line" data-action="ech-poste" data-vid="${x.v.id}" data-id="${esc(x.action.op || '')}">Fiche</button>` : ''}<button class="btn primary grow" data-action="ech-do" data-type="${x.action.type}" data-vid="${x.v ? x.v.id : ''}" data-op="${esc(x.action.op || '')}" data-id="${esc(x.action.id || '')}" data-set="${esc(x.action.set || '')}">${btnLabel}</button>`;
   openSheet(`${sheetHead(x.label, x.v ? x.v.surnom : '')}
     <div class="card pad"><p class="st-${x.status}" style="display:flex;align-items:center;gap:8px;font-weight:800">${ic(STATUS[x.status].icon, 18, 2.2)}${STATUS[x.status].word} · ${esc(echWhen(x))}</p>
     ${lines.map(l => `<p class="num" style="font-weight:700">${esc(l)}</p>`).join('')}
-    ${x.ops && x.ops.length ? `<div><p class="legend-label" style="margin-bottom:6px">À faire à ce service</p><ul class="hint" style="padding-left:18px;list-style:disc">${x.ops.map(o => `<li>${esc(o)}</li>`).join('')}</ul></div>` : ''}
-    ${x.guess ? `<p class="hint">Type de service estimé d’après l’âge de la voiture : le prochain service saisi le fixera.</p>` : ''}
     ${x.detail ? `<p class="hint">${esc(x.detail)}</p>` : ''}</div>
     <div class="sheet-actions">${actions}</div>`);
 }
@@ -1662,16 +1797,16 @@ function viewVehicle() {
       <div class="stack">${body(v)}</div>`;
   }
   const cgN = CG_FIELDS.filter(([c]) => v.cg[c.replace(/\./g, '_')]).length;
-  const planN = v.plan.filter(p => p.cat !== 'nettoyage' && (num(p.km) || num(p.months))).length;
-  const nextSvc = (programFor(v, 1).list || [])[0];
-  const a = v.assurance || {}; const docsN = D.docs.filter(x => x.vehicleId === v.id).length;
+  const planN = v.plan.filter(p => p.cat !== 'nettoyage').length;
+  const nv = nextVisit(v);
+  const a = v.assurance || {}; const docsN = D.docs.filter(x => docVehicles(x).includes(v.id)).length;
   const techBits = [num(v.tech.reservoir) ? `réservoir ${fmtN(num(v.tech.reservoir))} L` : '', v.tech.huile || ''].filter(Boolean);
   const tyreOn = tyreState(v.id).sets.filter(x => x.mounted);
   const rows = [
     ['identite', 'car', 'Identité et couleur', [v.marque, v.modele, v.annee, v.carburant].filter(Boolean).join(' · ')],
     ['cg', 'doc', 'Carte grise', cgN ? `${cgN} champ${cgN > 1 ? 's' : ''} sur ${CG_FIELDS.length}` : 'À recopier'],
     ['tech', 'wrench', 'Caractéristiques', techBits.length ? techBits.join(' · ') : 'Réservoir, huile, distribution…'],
-    ['entretien', 'clock', 'Plan d’entretien', nextSvc ? `Prochain : ${nextSvc.type ? SERVICE_TYPES[nextSvc.type].toLowerCase() : 'service'}, ${nextSvc.overdue ? 'à faire maintenant' : monthYear(nextSvc.date)}` : planN ? `${planN} éléments suivis · dernier service à saisir` : 'Intervalles à recopier'],
+    ['entretien', 'clock', 'Plan d’entretien', nv ? `Prochain : ${nv.first.short.charAt(0).toLowerCase() + nv.first.short.slice(1)}${nv.items.length > 1 ? ` et ${nv.items.length - 1} autre${nv.items.length > 2 ? 's' : ''}` : ''}, ${nv.first.status === 'late' ? 'en retard' : monthYear(nv.first.eff)}` : `${planN} postes suivis`],
     ['pneus', 'tire', 'Pneumatiques', tyreOn.length ? tyreOn.map(x => `${tyreName(x.e) || x.e.dim || 'Pneus'} ${posLabel(x.cur)}, ${ageText(x.birth)}`).join(' · ') : 'Historique à reconstruire'],
     ['remarques', 'flag', 'Remarques', (() => { const all = vehEvents(v.id).filter(e => e.type === 'remarque'); const o = all.filter(obsOpen).length; return all.length ? `${o ? `${o} en cours` : 'Aucune en cours'} · ${all.length} au total` : 'Voyants, anomalies, dégâts, accidents'; })()],
     ['assurance', 'shield', 'Assurance', a.assureur ? [a.assureur, a.echeance ? 'échéance ' + fmtDateShort(a.echeance) : ''].filter(Boolean).join(' · ') : 'À renseigner'],
@@ -1726,44 +1861,77 @@ function intervalText(it) {
   if (num(it.km)) p.push(`${fmtN(num(it.km))} km`);
   return p.join(' ou ');
 }
-function planRow(v, it, pts) {
-  const L = lastDone(v, it, pts); const x = EC.find(e => e.key === 'plan:' + it.id);
-  const sub = [intervalText(it) || (it.check ? (it.note || 'Contrôle à chaque service') : 'Pas d’intervalle'), L ? `dernière fois ${L.date ? fmtDateShort(L.date) : ''}${L.km != null && it.cat !== 'nettoyage' ? (L.date ? ', ' : '') + fmtN(L.km) + ' km' : ''}` : ''].filter(Boolean).join(' · ');
+/* Jauge : part de l'intervalle consommée (orange à 85 %, rouge à l'échéance ; orange seulement pour un repère sans rappel) */
+/* Jauges : une pour le temps, une pour les kilomètres quand le poste a les deux intervalles.
+   Orange à 85 %, rouge à l'échéance ; orange seulement pour un repère sans rappel. */
+function gaugeLine(s, kind, full) {
+  const p = kind === 'T' ? s.pT : s.pK; if (p == null) return '';
+  const g = kind === 'T' ? s.gT : s.gK; const pc = Math.round(p * 100); const pre = s.presumed ? 'au moins ' : '';
+  const span = kind === 'T'
+    ? (s.im ? (s.im >= 24 ? `${fmtN(s.days / 365.25, 1)} an${s.days >= 730 ? 's' : ''} sur ${fmtN(s.im / 12)} ans` : `${Math.round(s.days / 30.44)} mois sur ${s.im}`) : `${Math.round(s.days / 7)} semaines sur ${s.iw}`)
+    : `${fmtN(s.kmSince)} km sur ${fmtN(s.ik)}`;
+  const label = kind === 'T' ? 'Temps' : 'Km';
+  return `<span class="gline${full ? ' full' : ''}"><span class="gl">${full ? `${label === 'Km' ? 'Kilomètres' : 'Temps'} · ${esc(pre + span)}` : label}</span><span class="gauge g-${g}${s.presumed ? ' presumed' : ''}" role="img" aria-label="${label === 'Km' ? 'Kilomètres' : 'Temps'} : ${pre}${pc} % de l’intervalle (${esc(span)})"><i style="width:${Math.min(100, Math.max(2, p * 100)).toFixed(1)}%"></i></span><span class="gp st-${g === 'ok' ? 'ok' : g}">${s.presumed ? '≥ ' : ''}${pc} %</span></span>`;
+}
+const gaugeHtml = (s, full) => s.pT == null && s.pK == null ? '' : `<span class="gauges">${gaugeLine(s, 'T', full)}${gaugeLine(s, 'K', full)}</span>`;
+function posteRow(v, s) {
+  const it = s.it; const x = EC.find(e => e.key === 'plan:' + it.id && e.v && e.v.id === v.id);
+  const age = posteAge(s);
+  const when = s.L ? (s.days === 0 ? 'remplacé aujourd’hui' : `${age || 'âge inconnu'}${s.L.date ? ` · depuis le ${fmtDateShort(s.L.date)}` : ''}`) : s.presumed ? `au moins ${age} · rien noté depuis l’achat` : 'jamais noté';
+  const rule = s.hasInt ? (it.remind === false ? `Repère : ${intervalText(it)}` : intervalText(it).replace(/^./, c => c.toUpperCase())) : ((planDef(it) || {}).rule || 'Sans intervalle');
+  const trail = x && x.status !== 'unknown' ? `<span class="row-trail soft st-${x.status}">${esc(echWhen(x))}</span>` : '';
+  return `<li><button class="row prow" data-action="plan-edit" data-id="${it.id}"><span class="row-main"><span class="row-title">${esc(it.label)}</span>
+    <span class="row-sub">${esc(capFirst(when))}</span>${s.ref ? `<span class="row-sub ref">${esc(s.ref)}</span>` : ''}<span class="row-sub">${esc(rule)}</span>${gaugeHtml(s)}</span>
+    ${trail}<span class="chev">${ic('chevron', 16)}</span></button></li>`;
+}
+function cleanRow(v, it, pts) {
+  const L = lastDone(v, it, pts); const x = EC.find(e => e.key === 'plan:' + it.id && e.v && e.v.id === v.id);
+  const sub = [intervalText(it) || 'Pas d’intervalle', L && L.date ? `dernière fois ${fmtDateShort(L.date)}` : ''].filter(Boolean).join(' · ');
   return `<li><button class="row" data-action="plan-edit" data-id="${it.id}"><span class="row-main"><span class="row-title">${esc(it.label)}</span><span class="row-sub">${esc(sub)}</span></span>
     ${x && x.status !== 'unknown' ? `<span class="row-trail soft st-${x.status}">${esc(echWhen(x))}</span>` : ''}<span class="chev">${ic('chevron', 16)}</span></button></li>`;
 }
 function secPlan(v) {
-  const pts = kmPoints(v.id); const prog = programFor(v, 5);
-  const meca = v.plan.filter(p => p.cat !== 'nettoyage');
-  const timed = meca.filter(p => num(p.km) || num(p.months)), checks = meca.filter(p => !(num(p.km) || num(p.months)));
+  const pts = kmPoints(v.id);
+  const all = v.plan.filter(p => p.cat !== 'nettoyage').map(it => posteState(v, it, pts));
+  const rank = s => s.presumed || !s.base ? 2 : s.pct != null ? 0 : 1;
+  const order = (a, b) => rank(a) - rank(b) || (rank(a) === 0 ? b.pct - a.pct : 0) || (b.days ?? -1) - (a.days ?? -1);
+  const grp = k => all.filter(s => planKind(s.it) === k).sort(order);
   const clean = v.plan.filter(p => p.cat === 'nettoyage');
-  const lastAnti = vehEvents(v.id).filter(e => e.type === 'entretien' && num(e.antigel) != null).sort((a, b) => a.date.localeCompare(b.date)).at(-1);
-  let progHtml;
-  if (prog.list.length) {
-    progHtml = `<ul class="card rows">${prog.list.map(s => `<li><div class="row" style="align-items:flex-start"><span class="tile ${s.overdue ? 's-late' : s.type === 'principal' ? 'dark' : ''}">${ic('wrench', 18)}</span>
-      <span class="row-main"><span class="row-title">${s.type ? SERVICE_TYPES[s.type] : 'Service'} · ${s.overdue ? 'à faire maintenant' : capFirst(monthYear(s.date))}</span>
-      <span class="row-sub">${s.km != null ? 'vers ' + fmtN(s.km) + ' km · ' : ''}${esc(s.ops.map(o => o.code === 'service' ? 'vidange et filtre à huile' : o.label.toLowerCase()).join(', '))}</span></span></div></li>`).join('')}</ul>
-      <p class="hint" style="padding:0 4px">${prog.sure ? '' : 'Type des services estimé d’après l’âge de la voiture, jusqu’à ce que tu saisisses un service. '}Plan Opel : service chaque année ou tous les 30 000 km. Si le voyant d’entretien du tableau de bord s’allume avant, il prime.</p>`;
-  } else {
-    progHtml = `<div class="card pad"><p class="hint">Pour calculer les prochains services, saisis ton dernier service (date et kilométrage) en reprenant ton carnet.</p><div class="btnrow"><button class="btn primary sm" data-action="add" data-type="entretien" data-vid="${v.id}">${ic('plus', 16)}Saisir le dernier service</button></div></div>`;
-  }
-  return `<section class="section"><div class="section-head"><h2>Prochains services</h2></div>${progHtml}</section>
-    <section class="section"><div class="section-head"><h2>À remplacer</h2><span class="aside">${timed.length}</span></div><ul class="card rows">${timed.map(it => planRow(v, it, pts)).join('')}</ul></section>
-    <section class="section"><div class="section-head"><h2>Contrôlés à chaque service</h2></div><ul class="card rows">${checks.map(it => planRow(v, it, pts)).join('')}</ul>
-      ${lastAnti ? `<p class="hint" style="padding:0 4px">Dernière protection antigel mesurée : ${fmtN(num(lastAnti.antigel))} °C, le ${fmtDate(lastAnti.date)}.</p>` : ''}</section>
-    <section class="section"><div class="section-head"><h2>Nettoyage</h2></div><ul class="card rows">${clean.map(it => planRow(v, it, pts)).join('')}</ul></section>
-    <div class="btnrow" style="justify-content:space-between"><button class="btn line sm" data-action="add-plan">${ic('plus', 16)}Ajouter un élément</button>${isOpel(v) ? `<button class="btn quiet sm" data-action="plan-reset">${U.armed === 'plan-reset' ? 'Confirmer' : 'Rétablir les intervalles Opel'}</button>` : ''}</div>
-    <p class="hint" style="padding:0 4px">Sources : plan constructeur Opel pour l’Astra K et la Corsa E essence (Haynes), page Opel « Service &amp; maintenance », manuel d’utilisation Opel.</p>`;
+  const nv = nextVisit(v);
+  const visit = nv ? `<div class="card pad visit"><p class="eyebrow">Prochain passage au garage</p>
+      <p class="visit-when st-${nv.first.status}">${nv.first.status === 'late' ? 'Dès que possible' : `Vers ${monthYear(nv.first.eff)}`}</p>
+      <ul class="visit-list">${nv.items.map(x => `<li><span>${esc(x.label)}</span><span class="st-${x.status}">${esc(echWhen(x))}</span></li>`).join('')}</ul>
+      ${nv.items.length > 1 ? '<p class="hint">Les postes qui arrivent à échéance dans les 3 mois suivants sont regroupés : un seul passage au garage.</p>' : ''}
+      <div class="btnrow"><button class="btn primary sm" data-action="visit-add" data-vid="${v.id}">${ic('plus', 16)}Saisir l’intervention</button></div></div>`
+    : `<div class="card pad"><p class="hint">${all.some(s => s.L) ? 'Aucune échéance de poste avec rappel.' : 'Saisis ta dernière intervention (date, kilométrage et postes cochés) en reprenant tes factures : l’âge de chaque poste et ses échéances en partent.'}</p><div class="btnrow"><button class="btn line sm" data-action="add" data-type="entretien" data-vid="${v.id}">${ic('plus', 16)}Saisir une intervention</button></div></div>`;
+  const list = (k, t) => { const l = grp(k); return l.length ? `<section class="section"><div class="section-head"><h2>${t}</h2><span class="aside">${l.length}</span></div><ul class="card rows">${l.map(s => posteRow(v, s)).join('')}</ul></section>` : ''; };
+  return `${visit}${list('op', 'Opérations')}${list('eq', 'Équipements')}
+    <p class="hint" style="padding:0 4px">Les jauges montrent la part de l’intervalle déjà consommée, l’une en temps, l’autre en kilomètres quand le poste a les deux : orange à 85 %, rouge à l’échéance. L’échéance tombe à la première atteinte. « Au moins » : aucun remplacement noté depuis l’achat ; touche le poste pour noter la date si tu la connais.</p>
+    ${clean.length ? `<section class="section"><div class="section-head"><h2>Nettoyage</h2></div><ul class="card rows">${clean.map(it => cleanRow(v, it, pts)).join('')}</ul></section>` : ''}
+    <div class="btnrow" style="justify-content:space-between"><button class="btn line sm" data-action="add-plan">${ic('plus', 16)}Ajouter un poste</button>${isOpel(v) ? `<button class="btn quiet sm" data-action="plan-reset">${U.armed === 'plan-reset' ? 'Confirmer' : 'Rétablir les intervalles'}</button>` : ''}</div>
+    <p class="hint" style="padding:0 4px">Intervalles du plan Opel (Astra K et Corsa E essence) pour la vidange, le liquide de frein, les filtres, les bougies et la pile de télécommande ; repères courants des garages pour la climatisation, la batterie et les balais. La distribution de ces moteurs est à chaîne : pas de remplacement prévu.</p>`;
 }
 function openPlanItem(id) {
   const v = veh(U.vid); const it = v && v.plan.find(p => p.id === id); if (!it) return;
-  const clean = it.cat === 'nettoyage';
+  const clean = it.cat === 'nettoyage'; const def = planDef(it);
+  const pts = kmPoints(v.id); const s = clean ? null : posteState(v, it, pts); const hist = clean ? [] : posteHistory(v, it, pts);
+  const x = EC.find(e => e.key === 'plan:' + it.id && e.v && e.v.id === v.id);
+  const a = v.achat || {};
+  const summary = clean ? '' : `<div class="card pad poste-sum">
+      <p class="poste-age">${s.base ? `${s.presumed ? 'Au moins ' : ''}${esc(posteAge(s)) || 'Âge inconnu'}` : 'Âge inconnu'}</p>${gaugeHtml(s, true)}
+      <p class="hint">${s.L ? `Remplacé le ${fmtDate(s.L.date)}${s.L.km != null ? ` à ${fmtN(s.L.km)} km` : ''}.` : s.presumed ? `Aucun remplacement noté depuis l’achat (${fmtDate(s.base.date)}${s.base.km != null ? `, ${fmtN(s.base.km)} km` : ''}).` : 'Aucun remplacement noté, et date d’achat inconnue.'}${x && x.status !== 'unknown' ? ` Échéance : ${esc(echLines(x).join(' ; '))}.` : ''}</p>
+      ${s.ref ? `<p class="small"><b>Référence :</b> ${esc(s.ref)}</p>` : ''}</div>`;
+  const histHtml = hist.length ? `<section class="section"><div class="section-head"><h2>Historique</h2><span class="aside">${hist.length}</span></div><ul class="card rows">${hist.slice().reverse().map(h => `<li><button type="button" class="row" data-action="edit-event" data-id="${h.e.id}"><span class="row-main"><span class="row-title">${fmtDate(h.date)}${h.km != null ? ' · ' + fmtN(h.km) + ' km' : ''}</span><span class="row-sub">${esc([h.dDays != null ? `${shortDur(h.dDays)}${h.dKm != null ? `, ${fmtN(h.dKm)} km` : ''} après le précédent` : 'Premier remplacement noté', h.e.garage || '', (h.e.refs || {})[it.id] || ''].filter(Boolean).join(' · '))}</span></span>${h.late ? '<span class="row-trail soft st-late">intervalle dépassé</span>' : ''}</button></li>`).join('')}</ul></section>` : '';
   openSheet(`<form data-form="plan" data-id="${it.id}" novalidate><div class="stack">${sheetHead(it.label, v.surnom)}
-    ${it.note ? `<p class="hint">${esc(it.note)}</p>` : ''}
-    ${fIn('label', 'Élément', it.label)}
-    ${clean ? fIn('weeks', 'Toutes les (semaines)', it.weeks ?? '', { int: true }) : `<div class="grid2">${fIn('months', 'Tous les (mois)', it.months ?? '', { int: true })}${fIn('km', 'Tous les (km)', it.km ?? '', { int: true })}</div>`}
-    <div class="${clean ? '' : 'grid2'}">${fIn('lastDate', 'Dernière fois (date)', it.lastDate || '', { type: 'date' })}${clean ? '' : fIn('lastKm', 'Dernière fois (km)', it.lastKm ?? '', { int: true })}</div>
-    <p class="hint" style="margin-top:-6px">${clean ? 'Le bouton « Fait aujourd’hui » des échéances met cette date à jour.' : 'Une saisie d’entretien qui coche cet élément met la dernière intervention à jour.'} Laisse les intervalles vides pour ne pas créer d’échéance.</p>
+    ${summary}${histHtml}
+    ${fIn('label', 'Poste', it.label)}
+    ${clean ? '' : `<fieldset class="field"><legend class="legend-label">Nature</legend>${radioSeg('kind', [['op', 'Opération'], ['eq', 'Équipement']], planKind(it))}</fieldset>`}
+    ${clean ? fIn('weeks', 'Toutes les (semaines)', it.weeks ?? '', { int: true }) : `<div class="grid2">${fIn('months', 'Tous les (mois)', it.months ?? '', { int: true })}${fIn('km', 'Tous les (km)', it.km ?? '', { int: true })}</div>
+    <label class="check"><input type="checkbox" name="remind" ${it.remind === false ? '' : 'checked'}><span>Créer une échéance<br><span class="hint">Sinon l’intervalle sert de repère pour la jauge, sans rappel.</span></span></label>`}
+    ${def && def.hint ? `<p class="hint">${esc(def.hint)}</p>` : ''}${it.note ? `<p class="note">${ic('help', 18)}<span>${esc(it.note)}</span></p>` : ''}
+    <div class="${clean ? '' : 'grid2'}">${fIn('lastDate', clean ? 'Dernière fois (date)' : 'Dernier remplacement (date)', it.lastDate || '', { type: 'date' })}${clean ? '' : fIn('lastKm', 'Dernier remplacement (km)', it.lastKm ?? '', { int: true })}</div>
+    <p class="hint" style="margin-top:-6px">${clean ? 'Le bouton « Fait aujourd’hui » des échéances met cette date à jour.' : 'À remplir seulement sans facture : une saisie plus récente qui coche ce poste prend le relais.'}</p>
+    ${!clean && planKind(it) === 'eq' ? fIn('ref', 'Référence montée', it.ref || '', { ph: 'Marque, modèle, capacité', hint: 'La référence notée dans la dernière saisie prime.' }) : ''}
     <div class="form-err" id="form-err" role="alert" hidden></div>
     <div class="sheet-actions"><button type="button" class="btn danger" data-action="del-plan" data-id="${it.id}">${U.armed === 'plan:' + it.id ? 'Confirmer' : 'Retirer'}</button><button type="submit" class="btn primary grow">Enregistrer</button></div></div></form>`);
 }
@@ -1771,11 +1939,14 @@ function submitPlanItem(form) {
   const v = veh(U.vid); const it = v && v.plan.find(p => p.id === form.dataset.id); if (!it) return;
   const g = n => form.elements[n] ? form.elements[n].value : '';
   it.label = g('label').trim() || it.label;
+  const k = form.querySelector('input[name="kind"]:checked'); if (k) it.kind = k.value === 'op' ? 'op' : 'eq';
   if (form.elements.weeks) it.weeks = num(g('weeks'));
   if (form.elements.months) it.months = num(g('months'));
   if (form.elements.km) it.km = num(g('km'));
+  if (form.elements.remind) it.remind = form.elements.remind.checked;
   it.lastDate = validDate(g('lastDate')) ? g('lastDate') : null;
   if (form.elements.lastKm) it.lastKm = num(g('lastKm'));
+  if (form.elements.ref) it.ref = g('ref').trim();
   persist(); closeSheet(); rerender(); toast('Enregistré');
 }
 /* ============ Pneumatiques ============ */
@@ -1931,10 +2102,10 @@ function docCell(x) {
   const m = ev ? num(ev.montant) : (x.status === 'inbox' ? num(f.montant) : null);
   const title = ev ? (ev.type === 'depense' ? (DEP_CATS[ev.cat] || DEP_CATS.autre).label : TYPES[ev.type].label) : docTitle(x);
   return `<button class="doc-cell" data-action="open-doc" data-id="${x.id}"><span class="doc-wrap"><img class="thumb" data-thumb="${x.id}"${thumbAttr(x.id)} alt="">${badge ? `<span class="doc-badge ${badge[0]}">${badge[1]}</span>` : ''}</span>
-    <span class="cap-t">${esc(title)}${x.kind && DOC_KINDS[x.kind] ? ` · ${esc(DOC_KINDS[x.kind])}` : ''}</span><span class="cap-s">${esc([m != null ? fmtEur(m, 2) : '', date ? fmtDateShort(date) : 'date à lire', v ? v.surnom : ''].filter(Boolean).join(' · '))}</span></button>`;
+    <span class="cap-t">${esc(title)}${x.kind && DOC_KINDS[x.kind] ? ` · ${esc(DOC_KINDS[x.kind])}` : ''}</span><span class="cap-s">${esc([m != null && docEvents(x).length < 2 ? fmtEur(m, 2) : '', date ? fmtDateShort(date) : 'date à lire', docVehicles(x).length > 1 ? docVehicles(x).map(id => (veh(id) || {}).surnom).filter(Boolean).join(' + ') : v ? v.surnom : ''].filter(Boolean).join(' · '))}</span></button>`;
 }
 function viewDocs() {
-  const all = D.docs.filter(x => !U.dv || x.vehicleId === U.dv);
+  const all = D.docs.filter(x => !U.dv || docVehicles(x).includes(U.dv));
   const inbox = all.filter(x => ['inbox', 'queued', 'reading'].includes(x.status));
   const filed = all.filter(x => x.status === 'linked' || x.status === 'kept');
   if (U.df === 'inbox' && !inbox.length && filed.length) U.df = 'filed';
@@ -2030,11 +2201,38 @@ const markCls = m => m ? (m === 'ok' ? 'auto' : 'chk') : '';
 const fIn = (name, label, value, o = {}) => `<div class="field"><label for="f-${name}">${esc(label)}${markBadge(o.mark)}</label><input id="f-${name}" name="${name}" class="${markCls(o.mark)}" type="${o.type || 'text'}" value="${esc(value ?? '')}" ${o.dec ? 'inputmode="decimal"' : ''} ${o.int ? 'inputmode="numeric"' : ''} ${o.ph ? `placeholder="${esc(o.ph)}"` : ''} ${o.calc ? `data-calc="${name}"` : ''} ${o.auto ? 'autofocus' : ''} autocomplete="off">${o.hint ? `<p class="hint">${esc(o.hint)}</p>` : ''}</div>`;
 const decv = n => n == null || n === '' ? '' : String(n).replace('.', ',');
 const decm = n => n == null || n === '' ? '' : typeof n === 'number' ? n.toFixed(2).replace('.', ',') : String(n).replace('.', ',');
-function opsList(vid, selected, mark, kind) {
+function opsList(vid, selected, mark, kind, refs) {
   const v = veh(vid); const items = v ? v.plan.filter(p => kind === 'nettoyage' ? p.cat === 'nettoyage' : p.cat !== 'nettoyage') : [];
-  if (!items.length) return `<p class="hint">Aucun élément dans le plan de cette voiture.</p>`;
+  if (!items.length) return `<p class="hint">Aucun poste dans le plan de cette voiture.</p>`;
   if (kind === 'nettoyage') return `<fieldset class="field"><legend class="legend-label">Fait</legend><div class="seg">${items.map(it => `<label class="seg-opt"><input type="checkbox" name="ops" value="${it.id}" ${selected.includes(it.id) ? 'checked' : ''}>${esc(it.label.replace(/^Nettoyage /, ''))}</label>`).join('')}</div></fieldset>`;
-  return `<fieldset class="field"><legend class="legend-label">Opérations réalisées (cases du carnet)${markBadge(mark)}</legend><p class="hint" style="margin:-4px 0 8px">Elles mettent à jour les échéances et le programme.</p><div class="stack" style="gap:10px">${items.map(it => `<label class="check"><input type="checkbox" name="ops" value="${it.id}" data-code="${esc(it.code || '')}" ${selected.includes(it.id) ? 'checked' : ''}><span>${esc(it.label)}</span></label>`).join('')}</div></fieldset>`;
+  refs = refs || {};
+  const grp = (k, title) => { const l = items.filter(it => planKind(it) === k); if (!l.length) return '';
+    return `<div class="ops-grp"><p class="ops-h">${title}</p>${l.map(it => `<label class="check"><input type="checkbox" name="ops" value="${it.id}" data-code="${esc(it.code || '')}" data-kind="${k}" ${selected.includes(it.id) ? 'checked' : ''}><span>${esc(it.label)}</span></label>${k === 'eq' ? `<div class="ref-in" data-ref-for="${it.id}" ${selected.includes(it.id) ? '' : 'hidden'}><input name="ref_${it.id}" value="${esc(refs[it.id] || '')}" placeholder="Référence, marque (facultatif)" aria-label="Référence : ${esc(it.label)}" autocomplete="off"></div>` : ''}`).join('')}</div>`; };
+  return `<fieldset class="field"><legend class="legend-label">Postes remplacés ou faits${markBadge(mark)}</legend><p class="hint" style="margin:-4px 0 8px">Ils datent l’âge de chaque poste et ses échéances. Les simples contrôles ne se cochent pas.</p><div class="stack" style="gap:12px">${grp('op', 'Opérations')}${grp('eq', 'Équipements')}</div></fieldset>`;
+}
+/* Formulaire atelier : ce qui s'affiche selon la nature des travaux, les postes cochés et la prise en charge */
+function syncMulti(f) {
+  if (!f || !f.elements.multiOn) return;
+  const on = f.elements.multiOn.checked;
+  $$('[data-show="multi"]', f).forEach(el => { el.hidden = !on; }); $$('[data-hide="multi"]', f).forEach(el => { el.hidden = on; });
+  const vr = f.querySelector('input[name="vehicleId"]'); const fs = vr && vr.closest('fieldset'); if (fs) fs.hidden = on;
+  const mb = f.querySelector('#merge-box'); if (mb) mb.hidden = on;
+}
+function syncAtelier(f) {
+  syncMulti(f);
+  if (!f || !f.elements.natEnt) return;
+  const E = f.elements.natEnt.checked, R = f.elements.natRep.checked;
+  const show = (k, on) => $$(`[data-show="${k}"]`, f).forEach(el => { el.hidden = !on; });
+  const pr = f.querySelector('input[name="prise"]:checked'); const ins = !!(R && pr && pr.value !== 'aucune');
+  show('both', E && R); show('rep', R); show('ins', ins);
+  const oil = f.querySelector('input[name="ops"][data-code="oil"]'); show('oil', !!(oil && oil.checked));
+  $$('[data-ref-for]', f).forEach(el => { const cb = f.querySelector(`input[name="ops"][value="${el.dataset.refFor}"]`); el.hidden = !(cb && cb.checked); });
+  if (E || R) f.dataset.type = E ? 'entretien' : 'reparation';
+  const out = f.querySelector('#ins-rest'); if (!out) return;
+  const M = num(f.elements.montant.value), base = E && R ? num(f.elements.repMontant.value) : M;
+  let A = num(f.elements.assurPart.value); const Fr = num(f.elements.franchise.value);
+  if (A == null && Fr != null && base != null && pr && pr.value === 'totale') A = Math.max(0, base - Fr);
+  out.textContent = ins && base != null && A != null ? `Reste à ta charge pour la réparation : ${fmtEur(Math.max(0, base - A), 2)}. C’est ce montant qui compte dans tes dépenses.` : ins ? 'La somme payée par l’assurance sera retirée de tes dépenses. Si elle a tout pris en charge, la franchise suffit.' : '';
 }
 function eventFields(type, v, d, mk, op, isNew) {
   const auto = isNew && !d.__doc;
@@ -2046,30 +2244,22 @@ function eventFields(type, v, d, mk, op, isNew) {
       <label class="check"><input type="checkbox" name="oublie" ${d.oublie ? 'checked' : ''}><span>Un plein précédent n’a pas été noté<br><span class="hint">La consommation de cet intervalle sera ignorée.</span></span></label>
       ${fIn('station', 'Station', d.station || '', { mark: mk.station })}`;
   if (type === 'km') return fIn('km', 'Kilométrage au compteur', d.km ?? '', { int: true, auto, mark: mk.km, hint: d.__doc && d.kmHint ? d.kmHint : '' });
-  if (type === 'entretien') {
-    const svcItem = v.plan.find(p => p.code === 'service');
-    const nt = nextServiceType(v);
-    let sel = Array.isArray(d.ops) ? d.ops.slice() : (op ? [op] : []);
-    const svcVal = d.service !== undefined ? (d.service || 'autre') : (op && svcItem && op === svcItem.id && nt ? nt.type : (isNewSvc(d) && nt ? nt.type : 'autre'));
-    if (svcItem && svcVal !== 'autre' && !Array.isArray(d.ops) && !sel.includes(svcItem.id)) sel.push(svcItem.id);
-    return `<fieldset class="field"><legend class="legend-label">Service${markBadge(mk.service)}</legend><div class="seg">${[['intermediaire', 'Intermédiaire'], ['principal', 'Principal'], ['autre', 'Autre intervention']].map(([k, l]) => `<label class="seg-opt"><input type="radio" name="service" value="${k}" ${svcVal === k ? 'checked' : ''}>${l}</label>`).join('')}</div>
-      ${nt ? `<p class="hint" style="margin-top:8px">Prochain service attendu : ${SERVICE_TYPES[nt.type].toLowerCase()}${nt.sure ? '' : ' (estimé)'}.</p>` : ''}</fieldset>
-      <div class="grid2">${fIn('montant', 'Montant (€)', decm(d.montant), { dec: true, mark: mk.montant })}${fIn('km', 'Kilométrage', d.km ?? '', { int: true, mark: mk.km })}</div>
-      ${fIn('garage', 'Garage (tampon du réparateur)', d.garage || (v.tech && v.tech.garage) || '', { mark: mk.garage })}
-      <div class="grid2"><div class="field"><label for="f-huileQualite">Huile moteur : qualité${markBadge(mk.huileQualite)}</label><select id="f-huileQualite" name="huileQualite" class="${markCls(mk.huileQualite)}"><option value="">—</option>${OIL_GRADES.map(o => `<option ${o === d.huileQualite ? 'selected' : ''}>${o}</option>`).join('')}${d.huileQualite && !OIL_GRADES.includes(d.huileQualite) ? `<option selected>${esc(d.huileQualite)}</option>` : ''}</select></div>
-      ${fIn('huileViscosite', 'Viscosité', d.huileViscosite || '', { ph: '5W-30', mark: mk.huileViscosite })}</div>
-      ${fIn('antigel', 'Protection antigel (°C)', d.antigel != null && d.antigel !== '' ? decv(d.antigel) : '', { dec: true, ph: '-30', mark: mk.antigel })}
-      <div id="ops-box">${opsList(v.id, sel, mk.ops)}</div>
-      <div class="btnrow" style="margin-top:-6px"><button type="button" class="btn quiet sm" data-action="tick-planned">${ic('check', 16)}Cocher les opérations prévues au prochain service</button></div>
-      ${fIn('libelle', 'Autres travaux ou précision', d.libelle || '', { ph: 'Remplacement des essuie-glaces', mark: mk.libelle })}
-      <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>`;
-  }
-  if (type === 'reparation') {
-    const sel = Array.isArray(d.ops) ? d.ops : (op ? [op] : []);
-    return `${fIn('libelle', 'Pièce ou panne', d.libelle || '', { ph: 'Plaquettes avant', auto, mark: mk.libelle })}
-      <div class="grid2">${fIn('montant', 'Montant (€)', decm(d.montant), { dec: true, mark: mk.montant })}${fIn('km', 'Kilométrage', d.km ?? '', { int: true, mark: mk.km })}</div>
+  if (type === 'entretien' || type === 'reparation') {
+    const sel = Array.isArray(d.ops) ? d.ops.slice() : (op ? [op] : []);
+    const natE = type === 'entretien', natR = type === 'reparation' || num(d.repMontant) > 0;
+    const prise = ['partielle', 'totale'].includes(d.prise) ? d.prise : 'aucune';
+    const oilId = (v.plan.find(p => p.code === 'oil') || {}).id;
+    return `<fieldset class="field"><legend class="legend-label">Nature des travaux</legend><div class="seg"><label class="seg-opt"><input type="checkbox" name="natEnt" ${natE ? 'checked' : ''}>Entretien</label><label class="seg-opt"><input type="checkbox" name="natRep" ${natR ? 'checked' : ''}>Réparation</label></div><p class="hint" style="margin-top:8px">Coche les deux si la facture mélange entretien et réparation.</p></fieldset>
+      <div class="grid2">${fIn('montant', 'Montant total (€)', decm(d.montant), { dec: true, mark: mk.montant })}${fIn('km', 'Kilométrage', d.km ?? '', { int: true, mark: mk.km })}</div>
+      <div data-show="both" ${natE && natR ? '' : 'hidden'}>${fIn('repMontant', 'Dont réparation (€)', decm(d.repMontant), { dec: true, hint: 'Le reste compte comme entretien dans les statistiques.' })}</div>
       ${fIn('garage', 'Garage', d.garage || (v.tech && v.tech.garage) || '', { mark: mk.garage })}
-      <div id="ops-box">${opsList(v.id, sel, mk.ops)}</div>
+      <div id="ops-box">${opsList(v.id, sel, mk.ops, null, d.refs)}</div>
+      <div class="btnrow" style="margin-top:-6px"><button type="button" class="btn quiet sm" data-action="tick-planned">${ic('check', 16)}Cocher ce qui arrive à échéance</button></div>
+      <div data-show="oil" ${oilId && sel.includes(oilId) ? '' : 'hidden'}><div class="grid2"><div class="field"><label for="f-huileQualite">Huile : norme${markBadge(mk.huileQualite)}</label><select id="f-huileQualite" name="huileQualite" class="${markCls(mk.huileQualite)}"><option value="">—</option>${OIL_GRADES.map(o => `<option ${o === d.huileQualite ? 'selected' : ''}>${o}</option>`).join('')}${d.huileQualite && !OIL_GRADES.includes(d.huileQualite) ? `<option selected>${esc(d.huileQualite)}</option>` : ''}</select></div>
+      ${fIn('huileViscosite', 'Viscosité', d.huileViscosite || '', { ph: '0W-20', mark: mk.huileViscosite })}</div></div>
+      ${fIn('libelle', 'Travaux, pièce ou panne (précision)', d.libelle || '', { ph: natR && !natE ? 'Amortisseurs arrière' : 'Essuie-glaces, ampoule…', mark: mk.libelle })}
+      <div data-show="rep" ${natR ? '' : 'hidden'}><fieldset class="field"><legend class="legend-label">Prise en charge par l’assurance</legend>${radioSeg('prise', [['aucune', 'Aucune'], ['partielle', 'Partielle'], ['totale', 'Totale']], prise)}</fieldset>
+        <div data-show="ins" ${natR && prise !== 'aucune' ? '' : 'hidden'}><div class="grid2">${fIn('assurPart', 'Payé par l’assurance (€)', decm(d.assurPart), { dec: true })}${fIn('franchise', 'Franchise payée (€)', decm(d.franchise), { dec: true })}</div><p class="hint" id="ins-rest" aria-live="polite"></p></div></div>
       <div id="obsfix-box">${obsFixBlock(v.id, d.id)}</div>`;
   }
   if (type === 'nettoyage') {
@@ -2104,11 +2294,14 @@ function eventFields(type, v, d, mk, op, isNew) {
     const deb = validDate(d.debut) ? d.debut : (validDate(d.date) ? d.date : todayStr());
     const fin = validDate(d.fin) ? d.fin : addDays(addYears(deb, 1), -1);
     const crm = num(d.crm);
-    return `${fIn('montant', 'Montant payé (€)', decm(d.montant), { dec: true, auto, mark: mk.montant })}
+    const multi = Array.isArray(d.multi) && d.multi.length > 1; const mv = id => multi ? d.multi.find(x => x.vehicleId === id) : null;
+    const multiBlock = isNew && D.vehicles.length > 1 ? `<label class="check"><input type="checkbox" name="multiOn" ${multi ? 'checked' : ''}><span>Ce document couvre plusieurs voitures${markBadge(mk.multi)}<br><span class="hint">Une saisie par voiture, avec son montant et son bonus, toutes reliées à ce document.</span></span></label>
+      <div data-show="multi" ${multi ? '' : 'hidden'} class="stack" style="gap:12px">${D.vehicles.map(x => { const r = mv(x.id); return `<fieldset class="field multi-car"><legend class="legend-label">${carDot(x)}${esc(x.surnom || 'Sans nom')}</legend><label class="check"><input type="checkbox" name="mvOn_${x.id}" ${!multi || r ? 'checked' : ''}><span>Couverte par ce document</span></label><div class="grid2">${fIn('mvM_' + x.id, 'Montant (€)', r ? decm(r.montant) : '', { dec: true })}${fIn('mvC_' + x.id, 'Bonus-malus', r && r.crm != null ? r.crm.toFixed(2).replace('.', ',') : '', { dec: true, ph: '0,50' })}</div></fieldset>`; }).join('')}</div>` : '';
+    return `${multiBlock}<div data-hide="multi" ${multi ? 'hidden' : ''}>${fIn('montant', 'Montant payé (€)', decm(d.montant), { dec: true, auto, mark: mk.montant })}</div>
       <div class="grid2">${fIn('debut', 'Couvre du', deb, { type: 'date', mark: mk.debut })}${fIn('fin', 'au', fin, { type: 'date', mark: mk.fin })}</div>
       <p class="hint" style="margin-top:-6px">Pour une mensualité, mets la période d’un mois.</p>
       ${fIn('assureur', 'Assureur', d.assureur || (v.assurance && v.assurance.assureur) || '', { mark: mk.assureur })}
-      ${fIn('crm', 'Bonus-malus de la période (facultatif)', crm != null ? decv(crm) : '', { dec: true, ph: '0,50', mark: mk.crm, hint: 'Coefficient de réduction-majoration indiqué sur l’avis d’échéance : sert à suivre l’évolution de la prime.' })}
+      <div data-hide="multi" ${multi ? 'hidden' : ''}>${fIn('crm', 'Bonus-malus de la période (facultatif)', crm != null ? crm.toFixed(2).replace('.', ',') : '', { dec: true, ph: '0,50', mark: mk.crm, hint: 'Coefficient de réduction-majoration indiqué sur l’avis d’échéance : sert à suivre l’évolution de la prime.' })}</div>
       ${d.__doc ? `<label class="check"><input type="checkbox" name="majFiche" checked><span>Mettre à jour la fiche assurance<br><span class="hint">Assureur, échéance${crm != null ? ' et bonus-malus' : ''} d’après ce document.</span></span></label>` : ''}`;
   }
   return `<div class="field"><label for="f-cat">Catégorie${markBadge(mk.cat)}</label><select id="f-cat" name="cat" class="${markCls(mk.cat)}">${Object.entries(DEP_CATS).map(([k, c]) => `<option value="${k}" ${(d.cat || 'stationnement') === k ? 'selected' : ''}>${c.label}</option>`).join('')}</select></div>
@@ -2148,7 +2341,6 @@ function pneusFields(op, v, d, mk, isNew) {
   if (op === 'permutation') return `<p class="hint">Les pneus avant passent à l’arrière du même côté, et inversement.</p>${kmF}${money}`;
   return `${fIn('libelle', op === 'reparation' ? 'Réparation' : op === 'geometrie' ? 'Intervention' : 'Précision', d.libelle || '', { ph: op === 'reparation' ? 'Crevaison avant droit' : op === 'geometrie' ? 'Parallélisme, équilibrage 4 roues' : 'Valves, azote…', mark: mk.libelle })}${kmF}${money}`;
 }
-const isNewSvc = d => !d.id && !d.__doc;
 function openEventForm({ type, vid, id, op, docId, init }) {
   const e = id ? D.events.find(x => x.id === id) : null;
   if (id && !e) return;
@@ -2188,6 +2380,7 @@ function openEventForm({ type, vid, id, op, docId, init }) {
     <div class="form-err" id="form-err" role="alert" hidden></div>
     <div class="sheet-actions">${actions}</div></div></form>`);
   const sel = $('#sheet-root .types [aria-pressed="true"]'); if (sel) sel.parentElement.scrollLeft = Math.max(0, sel.offsetLeft - 24);
+  syncAtelier($('#sheet-root form[data-form="event"]'));
 }
 function reviewHead(doc) {
   const busy = doc.status === 'queued' || doc.status === 'reading';
@@ -2244,7 +2437,47 @@ function findDuplicate(o, selfId) {
   if (o.montant == null || !o.vehicleId || !validDate(o.date)) return null;
   return D.events.find(x => x.id !== selfId && x.vehicleId === o.vehicleId && x.type === o.type && x.date === o.date && num(x.montant) != null && Math.abs(num(x.montant) - o.montant) < 0.015 && (o.type !== 'plein' || o.litres == null || num(x.litres) == null || Math.abs(num(x.litres) - o.litres) < 0.05)) || null;
 }
+/* Fiche assurance d'une voiture mise à jour d'après un document, s'il n'est pas plus ancien qu'elle */
+function majFicheAssurance(v, o) {
+  const fa = v.assurance || {}; const newer = !validDate(fa.echeance) || !validDate(o.fin) || addDays(o.fin, 1) >= fa.echeance;
+  if (!newer) return false;
+  v.assurance = v.assurance || {};
+  if (o.assureur) v.assurance.assureur = o.assureur;
+  if (validDate(o.fin)) v.assurance.echeance = addDays(o.fin, 1);
+  if (o.crm != null && o.crm >= 0.5 && o.crm <= 3.5) v.assurance.crm = o.crm;
+  if (o.montant && (!v.assurance.paiement || v.assurance.paiement === 'annuel') && diffDays(o.debut, o.fin) > 300) v.assurance.prime = o.montant;
+  return true;
+}
+/* Un avis d'échéance ou un échéancier pour plusieurs voitures : une saisie par voiture, un seul document */
+function submitMultiAssurance(form) {
+  const g = n => form.elements[n] ? form.elements[n].value : '';
+  const docId = form.dataset.doc; const box = $('#form-err'); const errs = [];
+  const date = g('date'), debut = g('debut'), fin = g('fin'), assureur = g('assureur').trim(), notes = g('notes').trim();
+  if (!validDate(date)) errs.push('La date est manquante.');
+  if (!validDate(debut) || !validDate(fin) || fin < debut) errs.push('Vérifie la période couverte.');
+  const rows = D.vehicles.filter(v => form.elements['mvOn_' + v.id] && form.elements['mvOn_' + v.id].checked).map(v => ({ v, m: num(g('mvM_' + v.id)), c: num(g('mvC_' + v.id)) }));
+  if (rows.length < 2) errs.push('Coche au moins deux voitures, ou décoche « plusieurs voitures ».');
+  rows.forEach(r => { if (r.m == null) errs.push(`Indique le montant pour la ${r.v.surnom}.`); if (r.c != null && (r.c < 0.5 || r.c > 3.5)) errs.push(`Bonus-malus de la ${r.v.surnom} : entre 0,50 et 3,50.`); });
+  if (errs.length) { box.textContent = errs.join(' '); box.hidden = false; box.scrollIntoView({ block: 'nearest' }); return; }
+  const doc = docId ? docById(docId) : null; const pend = form.dataset.pending ? form.dataset.pending.split(',').filter(docById) : [];
+  const ids = []; let older = 0;
+  for (const r of rows) {
+    const o = { vehicleId: r.v.id, type: 'assurance', date, montant: r.m, debut, fin, assureur, crm: r.c, notes };
+    const ev = Object.assign({ id: uid(), created: Date.now(), docs: [] }, o);
+    if (doc) { ev.docs.push(doc.id); ev.source = doc.engine || 'photo'; }
+    pend.forEach(x => ev.docs.push(x));
+    D.events.push(ev); ids.push(ev.id);
+    if (doc && form.elements.majFiche && form.elements.majFiche.checked && !majFicheAssurance(r.v, o)) older++;
+  }
+  const link = dc => { if (!dc) return; dc.status = 'linked'; dc.eventId = ids[0]; dc.eventIds = ids.slice(); dc.vehicleId = rows[0].v.id; dc.vehicleIds = rows.map(r => r.v.id); dc.type = 'assurance'; delete dc.draft; delete dc.pending; };
+  link(doc); pend.forEach(x => link(docById(x))); form.dataset.pending = '';
+  D.meta.lastVehicle = rows[0].v.id; persist();
+  const label = `Assurance enregistrée pour ${rows.map(r => r.v.surnom).join(' et ')}${older ? ' · fiche inchangée (document plus ancien)' : ''}`;
+  if (docId && U.view === 'docs') { const next = D.docs.find(x => x.status === 'inbox' && x.id !== docId); rerender(); if (next) { openEventForm({ docId: next.id }); toast(label + ' · document suivant'); return; } }
+  closeSheet(); rerender(); toast(label);
+}
 function submitEvent(form) {
+  if (form.dataset.type === 'assurance' && form.elements.multiOn && form.elements.multiOn.checked) { submitMultiAssurance(form); return; }
   const g = n => form.elements[n] ? form.elements[n].value : '';
   let type = form.dataset.type; const docId = form.dataset.doc; let id = form.dataset.id;
   const vidEl = form.querySelector('input[name="vehicleId"]:checked'); const vid = vidEl ? vidEl.value : null;
@@ -2266,13 +2499,26 @@ function submitEvent(form) {
     if (o.prix && (o.prix < 0.8 || o.prix > 3.5)) warns.push(`Un prix de ${fmtN(o.prix, 3)} € le litre paraît anormal.`);
   }
   if (type === 'km' && km == null) errs.push('Indique le kilométrage.');
-  if (['entretien', 'reparation'].includes(type)) { o.libelle = g('libelle').trim(); o.garage = g('garage').trim(); o.ops = $$('input[name="ops"]:checked', form).map(i => i.value); }
-  if (type === 'entretien') {
-    const sv = form.querySelector('input[name="service"]:checked'); o.service = sv && SERVICE_TYPES[sv.value] ? sv.value : '';
-    o.huileQualite = g('huileQualite'); o.huileViscosite = g('huileViscosite').trim().toUpperCase().replace(/\s+/g, '');
-    let a = num(g('antigel')); if (a != null && a > 0) a = -a; o.antigel = a;
-    const svcItem = vid && veh(vid).plan.find(x => x.code === 'service'); if (o.service && svcItem && !o.ops.includes(svcItem.id)) o.ops.push(svcItem.id);
-    if (!o.service && !o.ops.length && !o.libelle) errs.push('Choisis le service, coche une opération ou décris l’intervention.');
+  if (['entretien', 'reparation'].includes(type) && form.elements.natEnt) {
+    const E = form.elements.natEnt.checked, R = form.elements.natRep.checked;
+    if (!E && !R) errs.push('Coche Entretien, Réparation ou les deux.');
+    type = E || !R ? 'entretien' : 'reparation'; o.type = type;
+    o.libelle = g('libelle').trim(); o.garage = g('garage').trim(); o.ops = $$('input[name="ops"]:checked', form).map(i => i.value);
+    const refs = {}; o.ops.forEach(pid => { const x = (form.elements['ref_' + pid] ? form.elements['ref_' + pid].value : '').trim(); if (x) refs[pid] = x; }); o.refs = refs;
+    o.repMontant = null; o.prise = null; o.assurPart = null; o.franchise = null;
+    if (E && R) { o.repMontant = num(g('repMontant')); if (o.repMontant == null) errs.push('Indique la part réparation du montant total.'); else if (o.montant != null && o.repMontant > o.montant + 0.005) errs.push('La part réparation dépasse le montant total.'); }
+    if (R) {
+      const pr = form.querySelector('input[name="prise"]:checked'); o.prise = pr ? pr.value : 'aucune';
+      if (o.prise !== 'aucune') {
+        o.assurPart = num(g('assurPart')); o.franchise = num(g('franchise')); const base = E ? o.repMontant : o.montant;
+        if (o.assurPart == null && o.franchise != null && base != null && o.prise === 'totale') o.assurPart = Math.max(0, +(base - o.franchise).toFixed(2));
+        if (o.assurPart == null) errs.push('Indique la somme payée par l’assurance, ou la franchise si elle a pris en charge tout le reste.');
+        else if (base != null && o.assurPart > base + 0.005) errs.push('La part de l’assurance dépasse le montant de la réparation.');
+      }
+    }
+    const oilId = vid && (veh(vid).plan.find(x => x.code === 'oil') || {}).id;
+    if (oilId && o.ops.includes(oilId)) { o.huileQualite = g('huileQualite'); o.huileViscosite = g('huileViscosite').trim().toUpperCase().replace(/\s+/g, ''); }
+    if (!o.ops.length && !o.libelle && o.montant == null) errs.push('Coche un poste ou décris les travaux.');
   }
   if (type === 'nettoyage') { o.ops = $$('input[name="ops"]:checked', form).map(i => i.value); o.libelle = g('libelle').trim(); if (!o.ops.length) errs.push('Coche intérieur, extérieur ou les deux.'); }
   if (type === 'ct') { const r = form.querySelector('input[name="resultat"]:checked'); o.resultat = r ? r.value : 'A'; o.centre = g('centre').trim(); o.defaillances = g('defaillances').trim(); }
@@ -2368,15 +2614,7 @@ function submitEvent(form) {
     if (doc) {
       ev.docs = Array.from(new Set([...(ev.docs || []), doc.id])); if (!mt || !ev.source) ev.source = doc.engine || 'photo';
       doc.status = 'linked'; doc.eventId = ev.id; doc.vehicleId = vid; doc.type = type; delete doc.draft;
-      const fa = veh(vid).assurance || {}; const newer = !validDate(fa.echeance) || !validDate(o.fin) || addDays(o.fin, 1) >= fa.echeance;
-      if (type === 'assurance' && form.elements.majFiche && form.elements.majFiche.checked && !newer) toast('Document plus ancien que la fiche : fiche inchangée');
-      if (type === 'assurance' && form.elements.majFiche && form.elements.majFiche.checked && newer) {
-        const v = veh(vid); v.assurance = v.assurance || {};
-        if (o.assureur) v.assurance.assureur = o.assureur;
-        if (validDate(o.fin)) v.assurance.echeance = addDays(o.fin, 1);
-        const crm = num(g('crm')); if (crm != null && crm >= 0.5 && crm <= 3.5) v.assurance.crm = crm;
-        if (o.montant && (!v.assurance.paiement || v.assurance.paiement === 'annuel') && diffDays(o.debut, o.fin) > 300) v.assurance.prime = o.montant;
-      }
+      if (type === 'assurance' && form.elements.majFiche && form.elements.majFiche.checked && !majFicheAssurance(veh(vid), o)) toast('Document plus ancien que la fiche : fiche inchangée');
     }
   }
   if (type === 'entretien' && vid) { const v = veh(vid); if (o.huileQualite && o.huileViscosite && !v.tech.huile) v.tech.huile = `${o.huileQualite} ${o.huileViscosite}`; }
@@ -2392,7 +2630,7 @@ function submitEvent(form) {
   if (type === 'pneus' && o.op === 'montage' && vid && o.dim) { const v = veh(vid); const k = o.saison === 'hiver' ? 'pneusHiver' : 'pneusEte'; if (!v.tech[k]) v.tech[k] = [o.dim, o.indices].filter(Boolean).join(' '); }
   if (id && type === 'pneus') { const keep = { montage: ['pos', 'marque', 'modele', 'dim', 'indices', 'saison', 'dot', 'depose'], remontage: ['setId', 'depose'], controle: ['pression', 'prof'] }[o.op] || []; ['pos', 'marque', 'modele', 'dim', 'indices', 'saison', 'dot', 'depose', 'setId', 'pression', 'prof'].forEach(k => { if (!keep.includes(k)) delete ev[k]; }); }
   D.meta.lastVehicle = vid; persist();
-  const label = type === 'remarque' ? 'Remarque enregistrée' : type === 'pneus' ? (o.op === 'controle' ? 'Relevé enregistré' : o.op === 'montage' ? 'Pneus enregistrés' : o.op === 'remontage' ? 'Remontage enregistré' : o.op === 'permutation' ? 'Permutation enregistrée' : 'Saisie enregistrée') : `${type === 'entretien' && o.service ? SERVICE_TYPES[o.service] : TYPES[type].label} enregistré${type === 'assurance' || type === 'reparation' || type === 'depense' ? 'e' : ''}`;
+  const label = type === 'remarque' ? 'Remarque enregistrée' : type === 'pneus' ? (o.op === 'controle' ? 'Relevé enregistré' : o.op === 'montage' ? 'Pneus enregistrés' : o.op === 'remontage' ? 'Remontage enregistré' : o.op === 'permutation' ? 'Permutation enregistrée' : 'Saisie enregistrée') : (type === 'entretien' && num(o.repMontant) ? 'Entretien et réparation enregistrés' : `${TYPES[type].label} enregistré${type === 'assurance' || type === 'reparation' || type === 'depense' ? 'e' : ''}`);
   const msg = mt ? `Rattaché à « ${eventTitle(ev)} » · ${attachMsg}` : label;
   if (docId && U.view === 'docs') { const next = D.docs.find(x => x.status === 'inbox' && x.id !== docId); rerender(); if (next) { openEventForm({ docId: next.id }); toast(msg + ' · document suivant'); return; } }
   closeSheet(); rerender(); toast(msg);
@@ -2670,6 +2908,48 @@ function pVehicle(U, ctx) {
   if (hits.length === 1) return { id: hits[0].id, sure: true };
   return null;
 }
+/* Voitures citées dans une ligne, dans l'ordre où elles apparaissent */
+function pVehLine(U, ctx) {
+  const hits = [];
+  const re = /\b([A-Z0-9]{2})[ -]?([0-9OIL]{3})[ -]?([A-Z0-9]{2})\b/g; let m;
+  while ((m = re.exec(U))) { const q = m[1] + m[2].replace(/O/g, '0').replace(/[IL]/g, '1') + m[3]; for (const v of ctx.vehicles) { const p = P_UP(v.immat).replace(/[^A-Z0-9]/g, ''); if (p.length === 7 && pHamming(q, p) <= 1) hits.push({ id: v.id, at: m.index }); } }
+  for (const v of ctx.vehicles) for (const w of [v.modele, v.surnom].filter(Boolean)) { const k = P_UP(w).split(/\s+/)[0]; if (k.length < 4) continue; const mm = new RegExp('\\b' + k + '\\b').exec(U); if (mm) hits.push({ id: v.id, at: mm.index }); }
+  const out = []; hits.sort((a, b) => a.at - b.at).forEach(h => { if (!out.includes(h.id)) out.push(h.id); });
+  return out;
+}
+const pRound2 = x => Math.round(x * 100) / 100;
+function pMultiVehicles(lines, ctx) {
+  if (!ctx.vehicles || ctx.vehicles.length < 2) return null;
+  const U = lines.map(l => P_UP(l)); const marks = U.map(l => pVehLine(l, ctx));
+  const seen = new Set(marks.flat()); if (seen.size < 2) return null;
+  const crmIn = T => { const mc = T.match(/(COEFFICIENT|BONUS|MALUS|\bCRM\b|REDUCTION)[^\d\n]{0,50}([0-3][,.]\d{2})/); const c = mc ? parseFloat(mc[2].replace(',', '.')) : null; return c != null && c >= 0.5 && c <= 3.5 ? c : null; };
+  /* En colonnes : une ligne d'en-tête nomme les voitures, puis une ligne datée par prélèvement */
+  const hi = marks.findIndex(m => m.length >= 2);
+  if (hi >= 0) {
+    const order = marks[hi]; const sums = {}; let n = 0;
+    for (let i = hi + 1; i < lines.length; i++) {
+      const ds = pDates([lines[i]], '2100-01-01'); if (ds.length !== 1) continue;
+      const nums = pDecimals(lines[i].replace(P_DATE_STRIP, ' ')).filter(x => x.dec === 2 && x.v >= 1 && x.v <= 3000).map(x => x.v);
+      if (nums.length < order.length) continue;
+      order.forEach((id, k) => { sums[id] = (sums[id] || 0) + nums[k]; }); n++;
+    }
+    if (n >= 2) return order.map(id => ({ vehicleId: id, montant: pRound2(sums[id]), crm: null }));
+  }
+  /* En blocs : chaque voiture a sa partie, jusqu'à la voiture suivante */
+  const firsts = [...seen].map(id => ({ id, i: marks.findIndex(m => m.includes(id)) })).sort((a, b) => a.i - b.i);
+  const out = firsts.map((f, k) => {
+    const end = k + 1 < firsts.length ? firsts[k + 1].i : lines.length;
+    const seg = lines.slice(f.i, end); const SU = U.slice(f.i, end);
+    let montant = null;
+    for (const L of SU) { if (/GENERAL|TOUS (LES )?CONTRATS|GLOBAL|DES CONTRATS/.test(L)) continue; const mt = L.match(/(TOTAL|COTISATION|MONTANT|PRIME)[^\d]{0,40}?(\d{1,3}(?:[  .]\d{3})*[,.]\d{2}|\d{1,5}[,.]\d{2})/); if (mt) { montant = parseFloat(mt[2].replace(/[  .](?=\d{3}\b)/g, '').replace(',', '.')); break; } }
+    if (montant == null) {
+      const sched = []; seg.forEach(l => { const ds = pDates([l], '2100-01-01'); if (ds.length !== 1) return; const nums = pDecimals(l.replace(P_DATE_STRIP, ' ')).filter(x => x.dec === 2 && x.v >= 3 && x.v <= 2000); if (nums.length) sched.push({ iso: ds[0].iso, v: nums[nums.length - 1].v }); });
+      const uniq = sched.filter((x, i) => sched.findIndex(y => y.iso === x.iso) === i); if (uniq.length >= 2) montant = pRound2(uniq.reduce((s, x) => s + x.v, 0));
+    }
+    return { vehicleId: f.id, montant, crm: crmIn(SU.join('\n')) };
+  });
+  return out.filter(x => x.montant != null).length >= 2 ? out : null;
+}
 const P_FUEL_BRANDS = [['TOTALENERGIES', 'TotalEnergies'], ['TOTAL ENERGIES', 'TotalEnergies'], ['TOTAL ACCESS', 'Total Access'], ['ESSO', 'Esso'], ['SHELL', 'Shell'], ['AVIA', 'Avia'], ['AGIP', 'Agip'], ['ENI', 'Eni'], ['BP', 'BP'], ['LECLERC', 'E.Leclerc'], ['INTERMARCHE', 'Intermarché'], ['CARREFOUR', 'Carrefour'], ['SUPER U', 'Super U'], ['HYPER U', 'Hyper U'], ['SYSTEME U', 'Système U'], ['AUCHAN', 'Auchan'], ['NETTO', 'Netto'], ['CASINO', 'Casino'], ['DYNEFF', 'Dyneff'], ['ELAN', 'Elan']];
 const P_GARAGE_BRANDS = [['NORAUTO', 'Norauto'], ['FEU VERT', 'Feu Vert'], ['MIDAS', 'Midas'], ['SPEEDY', 'Speedy'], ['POINT S', 'Point S'], ['EUROMASTER', 'Euromaster'], ['MOTRIO', 'Motrio'], ['CARGLASS', 'Carglass'], ['FIRST STOP', 'First Stop'], ['VULCO', 'Vulco'], ['AD EXPERT', 'AD Expert'], ['EUROREPAR', 'Eurorepar']];
 const P_CT_BRANDS = [['AUTOSUR', 'Autosur'], ['DEKRA', 'Dekra'], ['SECURITEST', 'Sécuritest'], ['AUTOBILAN', 'Autobilan'], ['NORISKO', 'Norisko'], ['AUTOVISION', 'Autovision'], ['CONTROLE AUTO', 'Contrôle Auto']];
@@ -2724,28 +3004,36 @@ function pFirstName(lines) {
   return null;
 }
 const P_OPS = [
-  [/VIDANGE|HUILE MOTEUR|FILTRE A HUILE|FILTRE HUILE|REVISION/, 'service', ['vidange', 'revision']],
+  [/VIDANGE|HUILE MOTEUR|FILTRE A HUILE|FILTRE HUILE|REVISION/, 'oil', ['vidange']],
   [/PILE|TELECOMMANDE|COMMANDE (DE )?RADIO/, 'keybat', ['telecommande']],
   [/HABITACLE|POLLEN|FILTRE CHARBON/, 'pollen', ['habitacle', 'pollen']],
   [/FILTRE A AIR|FILTRE AIR\b/, 'airfilter', ['filtre a air']],
-  [/COURROIE (D.?)?ACCESSOIRES?|COURROIE EN V|POLY ?V|COURROIE STRIEE/, 'vbelt', ['accessoire']],
-  [/COURROIE CRANTEE|KIT (DE )?DISTRIBUTION|COURROIE DE DISTRIBUTION/, 'timing', ['distribution']],
-  [/FILTRE (A )?(CARBURANT|ESSENCE|GASOIL|GAZOLE)/, 'fuelfilter', ['carburant']],
-  [/HUILE (DE )?BOITE/, 'gearoil', ['boite']],
+  [/COURROIE (D.?)?ACCESSOIRES?|COURROIE EN V|POLY ?V|COURROIE STRIEE|COURROIE (D.?)?ALTERNATEUR/, 'accbelt', ['accessoire']],
   [/LIQUIDE DE FREINS?|LIQ\.? ?(DE )?FREINS?|PURGE (DES )?FREINS?/, 'brakefluid', ['liquide de frein']],
-  [/KIT (DE )?REPARATION|ANTI ?CREVAISON|PRODUIT D.?ETANCHEITE/, 'tyrekit', ['pneus']],
-  [/PLAQUETTES?|GARNITURES?|DISQUES? DE FREIN/, 'brakes', ['garniture', 'plaquette']],
   [/BOUGIES?/, 'plugs', ['bougie']],
   [/LIQUIDE DE REFROIDISSEMENT|\bLDR\b/, 'coolant', ['refroidissement']],
-  [/CLIMATISATION|\bCLIM\b/, null, ['climatisation', 'clim']]
+  [/CLIMATISATION|\bCLIM\b|RECHARGE (DE )?(GAZ|CLIM)|R ?1234 ?YF|R ?134 ?A|DESHYDRATEUR/, 'clim', ['climatisation']],
+  [/BALAIS?|ESSUIE[ -]?GLACES?|RACLETTES?/, 'wipers', ['essuie']]
 ];
+/* Les simples contrôles, mises à niveau et diagnostics ne datent aucun poste */
+const P_CTRL = /CONTROLE|VERIFICATION|\bVERIF\b|\bTEST\b|DIAGNOSTIC|MISE A NIVEAU|\bNIVEAUX?\b|INSPECTION|APPOINT/;
+function pBrakeCodes(L) {
+  if (/EMBRAYAGE/.test(L)) return [];
+  const out = []; const rear = /\b(AR|ARR|ARRIERE)\b/.test(L), front = /\b(AV|AVANT)\b/.test(L);
+  if (/MACHOIRES?|SEGMENTS? DE FREIN|TAMBOURS?/.test(L)) out.push('brakesR');
+  if (/PLAQUETTES?|GARNITURES?/.test(L)) { if (!rear || front) out.push('padsF'); if (rear) out.push('brakesR'); }
+  if (/DISQUES?( DE FREINS?)?\b/.test(L) && !/DISQUE DUR/.test(L)) { if (!rear || front) out.push('discsF'); if (rear && !out.includes('brakesR')) out.push('brakesR'); }
+  return out;
+}
 function pOps(U, vInfo) {
   if (!vInfo) return [];
   const ids = new Set();
-  for (const [re, code, keys] of P_OPS) {
-    if (!re.test(U)) continue;
-    const byCode = code ? vInfo.plan.filter(p => p.code === code) : [];
-    (byCode.length ? byCode : vInfo.plan.filter(p => p.cat !== 'nettoyage' && keys.some(k => P_UP(p.label).replace(/[’']/g, ' ').includes(P_UP(k))))).forEach(it => ids.add(it.id));
+  const add = (code, keys) => { const byCode = code ? vInfo.plan.filter(p => p.code === code) : []; (byCode.length ? byCode : vInfo.plan.filter(p => p.cat !== 'nettoyage' && (keys || []).some(k => P_UP(p.label).replace(/[’']/g, ' ').includes(P_UP(k))))).forEach(it => ids.add(it.id)); };
+  for (const L of String(U).split(/\n/)) {
+    if (!L.trim() || P_CTRL.test(L)) continue;
+    for (const [re, code, keys] of P_OPS) if (re.test(L)) add(code, keys);
+    pBrakeCodes(L).forEach(c => add(c, []));
+    if (/BATTERIE/.test(L) && !/PILE|TELECOMMANDE/.test(L)) add('battery', ['batterie']);
   }
   return Array.from(ids);
 }
@@ -2821,9 +3109,8 @@ function parseDocText(text, ctx) {
     kmKw(); amt(5, 20000);
     if (/PRINCIPAL/.test(T) && /INTERMEDIAIRE/.test(T)) fields.libelle = '';
     const vis = T.match(/\b([05])\s?W\s?[-–]\s?(20|30|40)\b/); if (vis) set('huileViscosite', `${vis[1]}W-${vis[2]}`, false);
-    const ag = T.match(/-\s?(\d{2})\s?°?\s?C/); if (ag) set('antigel', -Number(ag[1]), false);
     conf.ops = 'check'; fields.ops = [];
-    if (vInfo && vInfo.nextService) set('service', vInfo.nextService, false);
+    if (vInfo) { const oil = vInfo.plan.find(p => p.code === 'oil'); if (oil) set('ops', [oil.id], false); }
   } else if (type === 'nettoyage') {
     amt(0.5, 300);
     const ex = vInfo && vInfo.plan.find(p => p.code === 'clean-ext'); if (ex) set('ops', [ex.id], true);
@@ -2832,8 +3119,8 @@ function parseDocText(text, ctx) {
     amt(5, 20000); kmKw();
     const b = pBrand(T, P_GARAGE_BRANDS); set('garage', b || pFirstName(lines), !!b);
     const ops = pOps(T, vInfo); set('ops', ops, true);
-    if (type === 'entretien') { const lab = /REVISION|VIDANGE/.test(T) ? 'Révision' : ops.length && vInfo ? ops.map(id => (vInfo.plan.find(p => p.id === id) || {}).label).filter(Boolean).slice(0, 2).join(', ') : null; set('libelle', lab, false); }
-    else { const m = T.match(/PLAQUETTES?|DISQUES? DE FREIN|EMBRAYAGE|AMORTISSEURS?|BATTERIE|ECHAPPEMENT|PARE[ -]BRISE|ALTERNATEUR|DEMARREUR|ROTULES?|ROULEMENTS?|PNEUS?/); set('libelle', m ? pTitle(m[0]) : null, false); }
+    if (type === 'entretien') { if (!ops.length && /REVISION/.test(T)) set('libelle', 'Révision', false); }
+    else { const m = T.match(/EMBRAYAGE|AMORTISSEURS?|ECHAPPEMENT|PARE[ -]BRISE|ALTERNATEUR|DEMARREUR|ROTULES?|ROULEMENTS?|CARDANS?|SILENT ?BLOCS?|TRIANGLES?|BIELLETTES?|POMPE A EAU|THERMOSTAT|SONDE LAMBDA|INJECTEURS?|BOBINES?/); set('libelle', m ? pTitle(m[0]) : null, false); }
   } else if (type === 'pneus') {
     amt(5, 4000); kmKw();
     const b = pBrand(T, P_TYRE_SHOPS); set('garage', b || pFirstName(lines), !!b);
@@ -2873,6 +3160,7 @@ function parseDocText(text, ctx) {
     const mc = T.match(/(COEFFICIENT|BONUS|MALUS|\bCRM\b|REDUCTION)[^\d]{0,50}([0-3][,.]\d{2})/); if (mc) { const c = parseFloat(mc[2].replace(',', '.')); if (c >= 0.5 && c <= 3.5) set('crm', c, true); }
     const b = pBrand(T, P_INS_BRANDS); set('assureur', b || pFirstName(lines), !!b);
     if (!fields.date && fields.debut) set('date', fields.debut, false);
+    const multi = pMultiVehicles(lines, ctx); if (multi) { fields.multi = multi; conf.multi = 'check'; }
     /* Échéancier : chaque ligne datée avec un montant = un prélèvement ; le total couvre la période */
     if (/ECHEANCIER|PRELEVEMENTS?|MENSUALITES?|FRACTIONNEMENT/.test(T)) {
       const sched = [];
@@ -2881,7 +3169,7 @@ function parseDocText(text, ctx) {
       if (uniq.length >= 3) {
         const total = Math.round(uniq.reduce((s, x) => s + x.v, 0) * 100) / 100; const last = uniq[uniq.length - 1].iso;
         const [ly, lm, ld] = last.split('-').map(Number); const nx = new Date(Date.UTC(ly, lm, ld - 1));
-        set('montant', total, false); set('debut', uniq[0].iso, false); set('fin', `${nx.getUTCFullYear()}-${p2(nx.getUTCMonth() + 1)}-${p2(nx.getUTCDate())}`, false);
+        set('montant', total, false); if (!mp) { set('debut', uniq[0].iso, false); set('fin', `${nx.getUTCFullYear()}-${p2(nx.getUTCMonth() + 1)}-${p2(nx.getUTCDate())}`, false); }
         if (!fields.date || fields.date > uniq[0].iso) set('date', uniq[0].iso, false);
         fields.notes = `Échéancier : ${uniq.length} prélèvements, du ${P_FR_DATE(uniq[0].iso)} au ${P_FR_DATE(last)}.`;
       }
@@ -2915,12 +3203,13 @@ function aiPrompt(doc) {
   return [
     doc.hint === 'km' ? 'La photo montre le tableau de bord d’une voiture. Lis le kilométrage total du compteur (pas le compteur journalier « trip »).' : 'La photo montre un document ou une scène liés à une voiture, en France : ticket de carburant, facture de garage ou de pneus, constat amiable ou courrier de sinistre, voyant allumé ou message au tableau de bord, dégât sur la carrosserie ou un vitrage, procès-verbal de contrôle technique, ticket de parking ou de péage, avis d’échéance ou attestation d’assurance, ou une autre dépense.',
     'Réponds uniquement par un objet JSON avec exactement ces clés. Mets null quand l’information n’apparaît pas : ne devine rien.',
-    '{"type": "plein"|"entretien"|"reparation"|"pneus"|"remarque"|"achat"|"ct"|"assurance"|"stationnement"|"peage"|"lavage"|"autre"|"compteur", "date": "AAAA-MM-JJ", "montant_ttc": nombre, "litres": nombre, "prix_litre": nombre, "carburant": "SP95-E10"|"SP95"|"SP98"|"E85"|"Gazole"|"GPL"|null, "kilometrage": entier, "immatriculation": texte, "commerce": texte, "libelle": texte, "operations": [texte], "type_service": "intermediaire"|"principal"|null, "huile_qualite": texte, "huile_viscosite": texte, "antigel_c": nombre, "ct_resultat": "A"|"S"|"R"|null, "ct_prochaine_visite": "AAAA-MM-JJ", "periode_debut": "AAAA-MM-JJ", "periode_fin": "AAAA-MM-JJ", "bonus_malus": nombre, "pneus_operation": "montage"|"reparation"|"geometrie"|"permutation"|"autre"|null, "pneus_marque": texte, "pneus_modele": texte, "pneus_dimension": texte, "pneus_indices": texte, "pneus_quantite": entier, "pneus_saison": "ete"|"hiver"|"4saisons"|null, "pneus_dot": texte, "remarque_categorie": "voyant"|"message"|"anomalie"|"vitrage"|"carrosserie"|"accident"|"autre"|null, "voyant": "moteur"|"huile"|"temperature"|"batterie"|"freins"|"abs"|"airbag"|"esp"|"pneus"|"service"|"direction"|"eclairage"|"carburant"|"autre"|null, "voyant_couleur": "rouge"|"orange"|"vert ou bleu"|null, "message_affiche": texte, "nature": texte, "zone": texte, "lieu": texte, "tiers_immatriculation": texte, "tiers_assureur": texte, "numero_sinistre": texte, "responsabilite": "non"|"partagee"|"oui"|null, "prix_vehicule": nombre, "nature_document": "facture"|"ticket"|"pv"|"devis"|"carnet"|"avis"|"echeancier"|"attestation"|"constat"|"courrier"|"commande"|"cg"|"photo"|null, "confiance": "haute"|"moyenne"|"basse"}',
+    '{"type": "plein"|"entretien"|"reparation"|"pneus"|"remarque"|"achat"|"ct"|"assurance"|"stationnement"|"peage"|"lavage"|"autre"|"compteur", "date": "AAAA-MM-JJ", "montant_ttc": nombre, "litres": nombre, "prix_litre": nombre, "carburant": "SP95-E10"|"SP95"|"SP98"|"E85"|"Gazole"|"GPL"|null, "kilometrage": entier, "immatriculation": texte, "commerce": texte, "libelle": texte, "operations": [texte], "huile_qualite": texte, "huile_viscosite": texte, "ct_resultat": "A"|"S"|"R"|null, "ct_prochaine_visite": "AAAA-MM-JJ", "periode_debut": "AAAA-MM-JJ", "periode_fin": "AAAA-MM-JJ", "bonus_malus": nombre, "pneus_operation": "montage"|"reparation"|"geometrie"|"permutation"|"autre"|null, "pneus_marque": texte, "pneus_modele": texte, "pneus_dimension": texte, "pneus_indices": texte, "pneus_quantite": entier, "pneus_saison": "ete"|"hiver"|"4saisons"|null, "pneus_dot": texte, "remarque_categorie": "voyant"|"message"|"anomalie"|"vitrage"|"carrosserie"|"accident"|"autre"|null, "voyant": "moteur"|"huile"|"temperature"|"batterie"|"freins"|"abs"|"airbag"|"esp"|"pneus"|"service"|"direction"|"eclairage"|"carburant"|"autre"|null, "voyant_couleur": "rouge"|"orange"|"vert ou bleu"|null, "message_affiche": texte, "nature": texte, "zone": texte, "lieu": texte, "tiers_immatriculation": texte, "tiers_assureur": texte, "numero_sinistre": texte, "responsabilite": "non"|"partagee"|"oui"|null, "prix_vehicule": nombre, "vehicules": [{"immatriculation": texte, "modele": texte, "montant_ttc": nombre, "bonus_malus": nombre}], "nature_document": "facture"|"ticket"|"pv"|"devis"|"carnet"|"avis"|"echeancier"|"attestation"|"constat"|"courrier"|"commande"|"cg"|"photo"|null, "confiance": "haute"|"moyenne"|"basse"}',
     '« nature_document » : la nature du papier lui-même (« pv » pour le procès-verbal d’un contrôle technique, « facture » pour sa facture, « photo » pour une photo du tableau de bord ou d’un dégât).',
-    'Document d’achat de la voiture (facture de vente, bon de commande, certificat de cession) : type "achat", « prix_vehicule » prix payé TTC, « kilometrage » au jour de l’achat, « commerce » le vendeur, « date » la date de vente. Avis d’échéance ou échéancier d’assurance : « montant_ttc » = total de la période (somme des prélèvements pour un échéancier), « periode_debut » et « periode_fin », « bonus_malus » le coefficient (ex. 0.50).',
+    'Document d’achat de la voiture (facture de vente, bon de commande, certificat de cession) : type "achat", « prix_vehicule » prix payé TTC, « kilometrage » au jour de l’achat, « commerce » le vendeur, « date » la date de vente. Avis d’échéance ou échéancier d’assurance : « montant_ttc » = total de la période (somme des prélèvements pour un échéancier), « periode_debut » et « periode_fin », « bonus_malus » le coefficient (ex. 0.50). S’il couvre plusieurs voitures, remplis aussi « vehicules » : une entrée par voiture, avec son immatriculation ou son modèle, son montant pour la période et son bonus-malus ; sinon « vehicules » vaut null.',
     'Type "remarque" pour : une photo du tableau de bord où un voyant est allumé (remarque_categorie "voyant", le voyant et sa couleur) ou un message s’affiche ("message", texte exact dans « message_affiche ») ; une photo de dégât (« carrosserie » : nature Rayure, Bosse, Choc, Rétroviseur ; « vitrage » : nature Impact, Fissure ou Bris ; « zone » comme « Portière avant droite » ou « Pare-brise ») ; un constat amiable, une déclaration ou un courrier de sinistre ("accident" : « date » = jour de l’accident, « lieu », véhicule et assureur de l’autre partie, numéro de sinistre). « libelle » : une phrase courte qui décrit le constat. Une photo du compteur sans voyant ni message reste de type "compteur".',
     'Pour une facture de pneus : type "pneus" ; « pneus_operation » "montage" pour des pneus neufs achetés ou montés ; « pneus_dimension » sous la forme « 205/55 R16 » ; « pneus_indices » charge et vitesse collés (« 91V ») ; « pneus_quantite » le nombre de pneus ; « pneus_saison » d’après le modèle (pneus hiver, 4 saisons ou été) ; « pneus_dot » les 4 chiffres semaine-année seulement s’ils sont écrits. Une facture de garage qui comporte surtout des pneus est de type "pneus".',
-    'Si c’est une page « Confirmation d’entretien » d’un carnet Opel : type "entretien", « type_service » d’après la case cochée (Intermédiaire ou Principal), « huile_qualite » d’après la case cochée (dexos 1, dexos 2, GM-LL-A-025, GM-LL-B-025, ACEA…), « huile_viscosite » comme « 5W-30 », « antigel_c » négatif (ex. -30), et dans « operations » uniquement les lignes cochées « Oui » (jamais les lignes simplement imprimées).',
+    'Si c’est une page « Confirmation d’entretien » d’un carnet Opel : type "entretien", « huile_qualite » d’après la case cochée (dexos 1, dexos 2, GM-LL-A-025, GM-LL-B-025, ACEA…), « huile_viscosite » comme « 5W-30 », et dans « operations » uniquement les lignes cochées « Oui » (jamais les lignes simplement imprimées). Le service lui-même compte comme « Vidange huile moteur et filtre ».',
+    '« operations » : seulement ce qui a été remplacé ou fait (vidange, filtre, liquide de frein, recharge de climatisation, batterie, plaquettes avant, disques, garnitures arrière, balais, pile de télécommande, courroie d’accessoires…), une entrée par élément, en précisant avant ou arrière pour les freins. N’y mets jamais les simples contrôles, vérifications ou mises à niveau. Pour une batterie ou des pièces, ajoute la marque et la référence dans l’entrée (ex. « Batterie Varta E11 74 Ah »).',
     'Nombres avec un point décimal, sans symbole. « date » : jour de l’achat, de l’intervention ou du contrôle. « commerce » : station, garage, centre de contrôle, parking ou assureur. « libelle » : quelques mots en français (« Révision et vidange », « Plaquettes avant »). « operations » : opérations d’entretien listées sur une facture.',
     `Voitures de l’utilisateur : ${cars}. Date du jour : ${todayStr()}.`
   ].join('\n');
@@ -2964,13 +3253,12 @@ function fromAi(j, ctx) {
     set('libelle', j.commerce || null);
   } else if (type === 'entretien' || type === 'reparation') {
     set('garage', j.commerce || null);
-    set('ops', pOps(P_UP([].concat(j.operations || []).join(' ') + ' ' + (j.libelle || '')), vInfo));
+    set('ops', pOps(P_UP([].concat(j.operations || []).join('\n') + '\n' + (j.libelle || '')), vInfo));
+    if (vInfo && fields.ops) { const refs = {}; [].concat(j.operations || []).forEach(o => { const U2 = P_UP(o); const m = String(o).match(/\b(\d{2,3}\s?AH)\b/i); const b = /BATTERIE/.test(U2) && !/PILE/.test(U2) && vInfo.plan.find(p => p.code === 'battery'); if (b && fields.ops.includes(b.id) && (m || /VARTA|BOSCH|EXIDE|FULMEN|TUDOR|BANNER|YUASA|CENTRA|STEC|NORAUTO|ACDELCO|MOTRIO/.test(U2))) refs[b.id] = String(o).replace(/^\s*(remplacement( de la)?|batterie)\s*/i, '').trim().slice(0, 60) || String(o).slice(0, 60); }); if (Object.keys(refs).length) set('refs', refs, false); }
     if (type === 'entretien') {
-      if (SERVICE_TYPES[j.type_service]) set('service', j.type_service);
       if (j.huile_qualite) { const q = OIL_GRADES.find(o => P_UP(o).replace(/\s/g, '') === P_UP(j.huile_qualite).replace(/\s/g, '')) || String(j.huile_qualite).slice(0, 30); set('huileQualite', q); }
       if (j.huile_viscosite) set('huileViscosite', String(j.huile_viscosite).toUpperCase().replace(/\s+/g, '').slice(0, 12));
-      const ag = n(j.antigel_c); if (ag != null) set('antigel', ag > 0 ? -ag : ag);
-      if (!fields.service) set('libelle', j.libelle || null);
+      set('libelle', j.libelle || null);
     } else set('libelle', j.libelle || null);
   } else if (type === 'pneus') {
     set('garage', j.commerce || null);
@@ -3012,6 +3300,11 @@ function fromAi(j, ctx) {
     if (validDate(j.periode_fin)) set('fin', j.periode_fin);
     const c = n(j.bonus_malus); if (c != null && c >= 0.5 && c <= 3.5) set('crm', c);
     if (!fields.date && fields.debut) set('date', fields.debut, false);
+    if (Array.isArray(j.vehicules) && j.vehicules.length > 1) {
+      const rows = j.vehicules.map(x => { const vh = pVehicle(P_UP([x && x.immatriculation, x && x.modele].filter(Boolean).join(' ')), ctx); const cc = n(x && x.bonus_malus); return vh ? { vehicleId: vh.id, montant: n(x.montant_ttc), crm: cc != null && cc >= 0.5 && cc <= 3.5 ? cc : null } : null; }).filter(Boolean);
+      const uniq = rows.filter((r, i) => rows.findIndex(q => q.vehicleId === r.vehicleId) === i);
+      if (uniq.length > 1) { fields.multi = uniq; conf.multi = 'check'; }
+    }
   } else {
     set('cat', cat); set('libelle', j.commerce || j.libelle || null);
   }
@@ -3029,7 +3322,7 @@ function ctxFor(doc) {
   return {
     today: todayStr(), hint: doc.hint || null,
     defaultVid: doc.vehicleId && veh(doc.vehicleId) ? doc.vehicleId : (veh(D.meta.lastVehicle) ? D.meta.lastVehicle : (D.vehicles[0] && D.vehicles[0].id)),
-    vehicles: D.vehicles.map(v => ({ id: v.id, surnom: v.surnom, marque: v.marque, modele: v.modele, immat: v.cg && v.cg.A, vin: v.cg && v.cg.E, carburant: v.carburant, nextService: (nextServiceType(v) || {}).type || null, plan: v.plan.map(p => ({ id: p.id, label: p.label, code: p.code || null, cat: p.cat || null })) })),
+    vehicles: D.vehicles.map(v => ({ id: v.id, surnom: v.surnom, marque: v.marque, modele: v.modele, immat: v.cg && v.cg.A, vin: v.cg && v.cg.E, carburant: v.carburant, plan: v.plan.map(p => ({ id: p.id, label: p.label, code: p.code || null, cat: p.cat || null })) })),
     kmEst: (vid, date) => { const k = kmAt(vid, validDate(date) ? date : todayStr()); return k == null ? null : Math.round(k); }
   };
 }
@@ -3319,88 +3612,73 @@ function moveStatsCard(id, dir) {
   if (U.view === 'stats') rerender();
 }
 
-/* ---------- Entretien ---------- */
-const MAINT_KINDS = [
-  ['principal', 'Service principal'], ['intermediaire', 'Service intermédiaire'], ['entretien', 'Autre entretien'], ['reparation', 'Réparation'], ['ct', 'Contrôle technique'], ['pneus', 'Pneus']
-];
-function maintKind(e) {
-  if (e.type === 'entretien') return SERVICE_TYPES[e.service] ? e.service : 'entretien';
-  if (e.type === 'pneus') return e.op === 'controle' ? null : 'pneus';
-  return ['reparation', 'ct'].includes(e.type) ? e.type : null;
-}
-function maintShape(kind, x, y, col, extra = '') {
-  x = +x; y = +y;
-  switch (kind) {
-    case 'principal': return `<circle cx="${x}" cy="${y}" r="6.5" fill="${col}" stroke="var(--surface)" stroke-width="2" ${extra}/>`;
-    case 'intermediaire': return `<circle cx="${x}" cy="${y}" r="5.5" fill="var(--surface)" stroke="${col}" stroke-width="2.5" ${extra}/>`;
-    case 'entretien': return `<rect x="${x - 5}" y="${y - 5}" width="10" height="10" rx="2" fill="${col}" stroke="var(--surface)" stroke-width="2" ${extra}/>`;
-    case 'reparation': return `<path d="M${x} ${y - 7} L${x + 7} ${y + 5} L${x - 7} ${y + 5} Z" fill="${col}" stroke="var(--surface)" stroke-width="2" stroke-linejoin="round" ${extra}/>`;
-    case 'ct': return `<path d="M${x} ${y - 7} L${x + 7} ${y} L${x} ${y + 7} L${x - 7} ${y} Z" fill="${col}" stroke="var(--surface)" stroke-width="2" ${extra}/>`;
-    case 'pneus': return `<circle cx="${x}" cy="${y}" r="6" fill="none" stroke="${col}" stroke-width="2"/><circle cx="${x}" cy="${y}" r="2.2" fill="${col}" ${extra}/>`;
+/* ---------- Entretien : remplacements par poste ---------- */
+function posteRows(vids) {
+  const rows = [];
+  for (const id of vids) {
+    const v = veh(id); if (!v) continue; const pts = kmPoints(id);
+    for (const it of v.plan.filter(p => p.cat !== 'nettoyage')) {
+      const h = posteHistory(v, it, pts); if (!h.length) continue;
+      rows.push({ v, it, h, st: posteState(v, it, pts) });
+    }
   }
-  return '';
-}
-const legendShape = kind => `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">${maintShape(kind, 8, 8.5, 'var(--ink-2)')}</svg>`;
-function serviceRespect(v) {
-  const svc = v.plan.find(p => p.code === 'service'); if (!svc) return null;
-  const months = num(svc.months) || 12, kmI = num(svc.km) || 30000; const pts = kmPoints(v.id);
-  const list = planDoneEvents(v, svc).sort((a, b) => a.date.localeCompare(b.date));
-  const kmOf = e => { const k = num(e.km) ?? kmAt(v.id, e.date, pts); return k == null ? null : Math.round(k); };
-  let ok = 0, late = 0, sd = 0, sk = 0, nk = 0;
-  for (let i = 1; i < list.length; i++) {
-    const a = list[i - 1], b = list[i]; const ka = kmOf(a), kb = kmOf(b);
-    const lateD = b.date > addDays(addMonths(a.date, months), 30); const lateK = ka != null && kb != null && kb - ka > kmI + 1500;
-    if (lateD || lateK) late++; else ok++;
-    sd += diffDays(a.date, b.date); if (ka != null && kb != null) { sk += kb - ka; nk++; }
-  }
-  const x = EC.find(e => e.key === 'plan:' + svc.id && e.v && e.v.id === v.id);
-  return { n: list.length, ok, late, overdue: !!(x && x.status === 'late'), avgMonths: list.length > 1 ? sd / (list.length - 1) / 30.44 : null, avgKm: nk ? sk / nk : null };
+  return rows;
 }
 function cardEntretien(vids, P) {
-  const evs = D.events.filter(e => vids.includes(e.vehicleId) && validDate(e.date) && e.date >= P.from && e.date <= P.to && maintKind(e));
-  const cost = costIn(vids, P.from.slice(0, 7), P.to.slice(0, 7)).filter(a => a.group === 'entretien').reduce((s, a) => s + a.amount, 0);
+  const evs = D.events.filter(e => vids.includes(e.vehicleId) && validDate(e.date) && e.date >= P.from && e.date <= P.to && (e.type === 'entretien' || e.type === 'reparation'));
+  const al = costIn(vids, P.from.slice(0, 7), P.to.slice(0, 7)).filter(a => a.group === 'entretien');
+  const cost = al.reduce((s, a) => s + a.amount, 0), repC = al.filter(a => a.sub === TYPES.reparation.sub).reduce((s, a) => s + a.amount, 0);
   const km = vids.reduce((s, id) => s + kmDriven(id, P.from, P.to), 0);
-  const noAmt = evs.filter(e => num(e.montant) == null && e.type !== 'ct').length;
-  const resp = vids.map(id => ({ v: veh(id), r: serviceRespect(veh(id)) })).filter(x => x.r && x.r.n);
-  const rOk = resp.reduce((s, x) => s + x.r.ok, 0), rAll = resp.reduce((s, x) => s + x.r.ok + x.r.late, 0);
-  const avgM = resp.filter(x => x.r.avgMonths != null), avgK = resp.filter(x => x.r.avgKm != null);
-  const kinds = MAINT_KINDS.filter(([k]) => evs.some(e => maintKind(e) === k));
+  const noAmt = evs.filter(e => num(e.montant) == null).length;
+  const ins = evs.reduce((s, e) => s + (num(e.assurPart) || 0), 0);
+  const ech = EC.filter(x => x.v && vids.includes(x.v.id) && x.key.startsWith('plan:') && !x.clean && x.status !== 'unknown');
+  const late = ech.filter(x => x.status === 'late');
+  const rows = posteRows(vids); const steps = rows.flatMap(r => r.h.filter(x => x.dDays != null && (num(r.it.months) || num(r.it.km)) && x.date >= P.from && x.date <= P.to));
+  const okSteps = steps.filter(x => !x.late).length;
   return `<section class="card chart-card"><h2 class="chart-title">Suivi de l’entretien</h2>
     <div class="kpis mini">
+      <div class="kpi"><span class="l">Coût entretien et réparations</span><span class="v">${fmtEur(cost)}</span><span class="s">${[repC > 0 ? `dont ${fmtEur(repC)} de réparations` : '', km > 1000 && cost > 0 ? fmtN(cost / km * 1000, 0) + ' € / 1 000 km' : '', ins > 0 ? `${fmtEur(ins)} payés par l’assurance` : '', noAmt ? `${noAmt} sans montant` : ''].filter(Boolean).join(' · ')}</span></div>
       <div class="kpi"><span class="l">Interventions</span><span class="v">${evs.length}</span><span class="s">${esc(P.label)}</span></div>
-      <div class="kpi"><span class="l">Coût entretien</span><span class="v">${fmtEur(cost)}</span><span class="s">${km > 1000 && cost > 0 ? fmtN(cost / km * 1000, 0) + ' € / 1 000 km' : ''}${noAmt ? `${km > 1000 && cost > 0 ? ' · ' : ''}${noAmt} sans montant` : ''}</span></div>
-      <div class="kpi"><span class="l">Services dans les délais</span><span class="v">${rAll ? `${rOk} <small>sur ${rAll}</small>` : '—'}</span><span class="s ${resp.some(x => x.r.overdue) ? 'st-late' : ''}">${resp.some(x => x.r.overdue) ? 'prochain service en retard' : 'tout l’historique'}</span></div>
-      <div class="kpi"><span class="l">Intervalle moyen</span><span class="v">${avgM.length ? fmtN(avgM.reduce((s, x) => s + x.r.avgMonths, 0) / avgM.length, 1) + ' <small>mois</small>' : '—'}</span><span class="s">${avgK.length ? fmtN(avgK.reduce((s, x) => s + x.r.avgKm, 0) / avgK.length) + ' km entre deux services' : ''}</span></div>
+      <div class="kpi"><span class="l">Postes à jour</span><span class="v">${ech.length ? `${ech.length - late.length} <small>sur ${ech.length}</small>` : '—'}</span><span class="s ${late.length ? 'st-late' : ''}">${late.length ? `en retard : ${esc(late.slice(0, 2).map(x => x.short.toLowerCase()).join(', '))}${late.length > 2 ? '…' : ''}` : 'aujourd’hui'}</span></div>
+      <div class="kpi"><span class="l">Remplacements à temps</span><span class="v">${steps.length ? `${okSteps} <small>sur ${steps.length}</small>` : '—'}</span><span class="s">intervalle respecté, ${esc(P.label)}</span></div>
     </div>
-    ${kinds.length ? `<div class="legend">${kinds.map(([k, l]) => `<span>${legendShape(k)}${l}</span>`).join('')}</div>` : ''}
+    <div class="legend"><span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8.5" r="5" fill="var(--ink)" stroke="var(--surface)" stroke-width="2"/></svg>Remplacement</span><span><i class="sw" style="background:var(--ok)"></i>Intervalle respecté</span><span><i class="sw" style="background:var(--late)"></i>Intervalle dépassé</span><span><i class="sw dash"></i>Âge actuel</span></div>
     <div class="chart" id="ch-ent"></div>
-    <p class="chart-sub" style="margin-top:0">Dans les délais : service fait au plus tard un mois après l’échéance (12 mois ou 30 000 km, plan Opel).</p></section>`;
+    <p class="chart-sub" style="margin-top:0">Une ligne par poste remplacé au moins une fois. Dépassé : remplacé plus d’un mois ou 1 500 km après son intervalle.</p></section>`;
 }
 function drawEntretien(vids, P) {
   const box = $('#ch-ent'); if (!box) return;
-  const rows = vids.map(id => ({ v: veh(id), evs: D.events.filter(e => e.vehicleId === id && validDate(e.date) && e.date >= P.from && e.date <= P.to && maintKind(e)).sort((a, b) => a.date.localeCompare(b.date)) }));
-  const all = rows.flatMap(r => r.evs);
-  if (!all.length) { box.innerHTML = emptyChart('Aucune intervention sur la période.'); return; }
-  const W = Math.max(280, Math.floor(box.clientWidth)), rowH = 42, m = { l: vids.length > 1 ? 58 : 10, r: 12, t: 8, b: 24 };
+  const t = todayStr();
+  const rows = posteRows(vids).filter(r => r.h.some(x => x.date <= P.to) && (r.h.at(-1).date >= P.from || r.h.some(x => x.date >= P.from) || P.to >= t));
+  if (!rows.length) { box.innerHTML = emptyChart('Aucun remplacement noté : coche les postes dans tes saisies d’entretien.'); return; }
+  const multi = vids.length > 1;
+  const W = Math.max(280, Math.floor(box.clientWidth)), rowH = 38, m = { l: 10, r: 12, t: 4, b: 24 };
   const H = m.t + m.b + rowH * rows.length;
-  let x0 = dayNum(P.from), x1 = dayNum(P.to); if (U.sp === 'all') { x0 = Math.min(...all.map(e => dayNum(e.date))) - 20; }
+  let x0 = dayNum(P.from), x1 = dayNum(P.to > t ? t : P.to);
+  if (U.sp === 'all') x0 = Math.min(...rows.map(r => dayNum(r.h[0].date))) - 30;
   if (x1 - x0 < 60) x0 = x1 - 60;
-  const X = d => m.l + (d - x0) / (x1 - x0) * (W - m.l - m.r);
-  let g = monthTicks(x0, x1, Math.floor((W - m.l - m.r) / 62)).map(t => `<line class="grid" x1="${X(t.d).toFixed(1)}" x2="${X(t.d).toFixed(1)}" y1="${m.t}" y2="${H - m.b}"/><text x="${X(t.d).toFixed(1)}" y="${H - 6}" text-anchor="middle">${t.label}</text>`).join('');
+  const X = d => m.l + (Math.max(x0, Math.min(x1, d)) - x0) / (x1 - x0) * (W - m.l - m.r);
+  let g = monthTicks(x0, x1, Math.floor((W - m.l - m.r) / 62)).map(tk => `<line class="grid" x1="${X(tk.d).toFixed(1)}" x2="${X(tk.d).toFixed(1)}" y1="${m.t}" y2="${H - m.b}"/><text x="${X(tk.d).toFixed(1)}" y="${H - 6}" text-anchor="middle">${tk.label}</text>`).join('');
   const tips = []; let marks = '';
+  const col = s => s === 'late' ? 'var(--late)' : s === 'soon' ? 'var(--soon)' : 'var(--ok)';
   rows.forEach((r, i) => {
-    const cy = m.t + rowH * i + rowH / 2;
-    g += `<line class="base" x1="${m.l}" x2="${W - m.r}" y1="${cy}" y2="${cy}"/>`;
-    if (vids.length > 1) g += `<text x="${m.l - 8}" y="${cy + 4}" text-anchor="end">${esc(r.v.surnom)}</text>`;
-    const prev = [];
-    r.evs.forEach(e => {
-      let x = X(dayNum(e.date)); let dy = 0; const near = prev.filter(px => Math.abs(px - x) < 9).length; if (near) dy = near % 2 ? -10 : 10; prev.push(x);
-      const k = maintKind(e); const ti = tips.push(`${fmtDate(e.date)} · ${esc(r.v.surnom)}<br><b>${esc(eventTitle(e))}</b>${num(e.km) != null ? '<br>' + fmtN(num(e.km)) + ' km' : ''}${num(e.montant) != null ? ' · ' + fmtEur(num(e.montant), 2) : ''}`) - 1;
-      marks += maintShape(k, x.toFixed(1), (cy + dy).toFixed(1), r.v.couleur) + `<circle class="hot-dot" cx="${x.toFixed(1)}" cy="${(cy + dy).toFixed(1)}" r="11" data-ti="${ti}" tabindex="0" role="img" aria-label="${fmtDate(e.date)}, ${esc(r.v.surnom)} : ${esc(eventTitle(e))}"/>`;
+    const top = m.t + rowH * i; const cy = top + 26;
+    /* Nom du poste au-dessus de sa ligne : toute la largeur reste au temps */
+    g += `${multi ? `<circle cx="${m.l + 4}" cy="${top + 9}" r="4" fill="${r.v.couleur}"/>` : ''}<text x="${m.l + (multi ? 13 : 0)}" y="${top + 13}" class="lbl">${esc(planShort(r.it))}${multi ? ` · ${esc(r.v.surnom)}` : ''}</text>`;
+    g += `<line class="base" x1="${m.l}" x2="${W - m.r}" y1="${cy}" y2="${cy}" style="opacity:.5"/>`;
+    r.h.forEach((x, k) => {
+      const nx = r.h[k + 1]; const a = dayNum(x.date);
+      if (nx) { const b = dayNum(nx.date); if (b >= x0 && a <= x1) marks += `<line x1="${X(a).toFixed(1)}" x2="${X(b).toFixed(1)}" y1="${cy}" y2="${cy}" stroke="${nx.late ? 'var(--late)' : 'var(--ok)'}" stroke-width="3.5" stroke-linecap="round"/>`; }
+      else if (a <= x1) marks += `<line x1="${X(a).toFixed(1)}" x2="${X(x1).toFixed(1)}" y1="${cy}" y2="${cy}" stroke="${r.st.gauge ? col(r.st.gauge) : 'var(--ink-2)'}" stroke-width="3" stroke-dasharray="2 5" stroke-linecap="round"/>`;
+    });
+    r.h.forEach(x => {
+      const d = dayNum(x.date); if (d < x0 || d > x1) return;
+      const ti = tips.push(`${fmtDate(x.date)}${multi ? ' · ' + esc(r.v.surnom) : ''}<br><b>${esc(r.it.label)}</b>${x.km != null ? '<br>' + fmtN(x.km) + ' km' : ''}${x.dDays != null ? `<br>${shortDur(x.dDays)}${x.dKm != null ? ', ' + fmtN(x.dKm) + ' km' : ''} après le précédent` : ''}${(x.e.refs || {})[r.it.id] ? '<br>' + esc(x.e.refs[r.it.id]) : ''}`) - 1;
+      marks += `<circle cx="${X(d).toFixed(1)}" cy="${cy}" r="5.5" fill="${multi ? r.v.couleur : 'var(--ink)'}" stroke="var(--surface)" stroke-width="2"/><circle class="hot-dot" cx="${X(d).toFixed(1)}" cy="${cy}" r="11" data-ti="${ti}" tabindex="0" role="img" aria-label="${fmtDate(x.date)}, ${esc(r.v.surnom)} : ${esc(r.it.label)}"/>`;
     });
   });
   TIPS['ch-ent'] = tips;
-  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Frise des interventions d’entretien">${g}${marks}</svg><div class="tip" hidden></div>`;
+  box.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="Frise des remplacements par poste">${g}${marks}</svg><div class="tip" hidden></div>`;
   bindTips(box);
 }
 
@@ -3841,7 +4119,9 @@ function fillEmpty(target, src) {
 function attachDocTo(doc, ev) {
   const same = doc.type === ev.type, f = doc.fields || {}, done = [];
   ev.docs = Array.from(new Set([...(ev.docs || []), doc.id]));
-  doc.status = 'linked'; doc.eventId = ev.id; doc.vehicleId = ev.vehicleId; doc.type = ev.type; delete doc.draft; delete doc.pending;
+  const prev = doc.status === 'linked' ? docEvents(doc).filter(i => i !== ev.id && D.events.some(e => e.id === i)) : [];
+  doc.status = 'linked'; doc.eventId = prev[0] || ev.id; doc.type = ev.type; delete doc.draft; delete doc.pending;
+  if (prev.length) { doc.eventIds = prev.concat(ev.id); const vs = Array.from(new Set(doc.eventIds.map(i => (D.events.find(e => e.id === i) || {}).vehicleId).filter(Boolean))); if (vs.length > 1) doc.vehicleIds = vs; } else doc.vehicleId = ev.vehicleId;
   (same ? ['montant', 'km', 'garage'] : ['montant', 'km']).forEach(k => { if (isBlank(ev[k]) && !isBlank(f[k])) { ev[k] = f[k]; done.push(FIELD_NAMES[k]); } });
   return done;
 }
@@ -4069,8 +4349,9 @@ async function exportJson() {
 const frDate = s => validDate(s) ? s.split('-').reverse().join('/') : '';
 const csvCell = v => { const s = v == null ? '' : String(v); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
 async function exportCsv() {
-  const head = ['date', 'voiture', 'type', 'montant', 'litres', 'prix_litre', 'km', 'plein_complet', 'libelle', 'notes'];
-  const rows = sortEvents(D.events).reverse().map(e => [frDate(e.date), (veh(e.vehicleId) || {}).surnom || '', e.type === 'depense' ? (e.cat || 'autre') : e.type, decv(e.montant), decv(e.litres), decv(e.prix), e.km ?? '', e.type === 'plein' ? (e.complet === false ? 'non' : 'oui') : '', e.type === 'pneus' || e.type === 'remarque' ? eventTitle(e) : (e.libelle || e.station || e.garage || e.centre || e.assureur || ''), e.notes || '']);
+  const head = ['date', 'voiture', 'type', 'montant', 'litres', 'prix_litre', 'km', 'plein_complet', 'libelle', 'notes', 'garage', 'operations', 'part_reparation', 'part_assurance'];
+  const opsCodes = e => { const v = veh(e.vehicleId); if (!v || !Array.isArray(e.ops) || e.type === 'nettoyage') return ''; return e.ops.map(id => v.plan.find(p => p.id === id)).filter(Boolean).map(p => p.code || norm(p.label).replace(/[^a-z0-9]+/g, '_')).join('+'); };
+  const rows = sortEvents(D.events).reverse().map(e => [frDate(e.date), (veh(e.vehicleId) || {}).surnom || '', e.type === 'depense' ? (e.cat || 'autre') : e.type, decv(e.montant), decv(e.litres), decv(e.prix), e.km ?? '', e.type === 'plein' ? (e.complet === false ? 'non' : 'oui') : '', e.type === 'pneus' || e.type === 'remarque' ? eventTitle(e) : (e.libelle || e.station || e.garage || e.centre || e.assureur || ''), e.notes || '', e.garage || e.centre || '', opsCodes(e), decv(e.repMontant), decv(e.assurPart)]);
   const text = '﻿' + [head].concat(rows).map(r => r.map(csvCell).join(';')).join('\r\n');
   const r = await saveFile(`journal-voitures-${todayStr()}.csv`, text, 'text/csv');
   toast(r === 'saved' ? 'Journal exporté' : r === 'declined' ? 'Export annulé' : 'Export impossible dans cette vue');
@@ -4119,8 +4400,9 @@ function importCsv(text) {
     litres: col(['litres', 'litre', 'volume']), prix: col(['prix_litre', 'prix_au_litre', 'prix_l']), km: col(['km', 'kilometrage', 'compteur']),
     complet: col(['plein_complet', 'complet']), lib: col(['libelle', 'lieu', 'station', 'description']), notes: col(['notes', 'note', 'commentaire']),
     garage: col(['garage', 'reparateur', 'centre']), service: col(['service', 'type_service']), huile: col(['huile_qualite', 'huile', 'qualite_huile']), visc: col(['viscosite', 'huile_viscosite']),
-    antigel: col(['antigel', 'protection_antigel']), ops: col(['operations', 'operations_realisees', 'ops']) };
-  const OPS_ALIAS = { pile: 'keybat', telecommande: 'keybat', batterie: 'keybat', pollens: 'pollen', habitacle: 'pollen', filtre_air: 'airfilter', air: 'airfilter', liquide_frein: 'brakefluid', liquide_freins: 'brakefluid', bougies: 'plugs', bougie: 'plugs', plaquettes: 'brakes', garnitures: 'brakes', freins: 'brakes', vidange: 'service', revision: 'service', courroie_accessoires: 'vbelt', distribution: 'timing', filtre_carburant: 'fuelfilter', huile_boite: 'gearoil', kit_pneus: 'tyrekit', refroidissement: 'coolant' };
+    antigel: col(['antigel', 'protection_antigel']), ops: col(['operations', 'operations_realisees', 'ops']), rep: col(['part_reparation', 'dont_reparation']), ass: col(['part_assurance', 'pris_en_charge', 'prise_en_charge']) };
+  const OPS_ALIAS = { pile: 'keybat', telecommande: 'keybat', pile_telecommande: 'keybat', batterie: 'battery', pollens: 'pollen', habitacle: 'pollen', filtre_habitacle: 'pollen', filtre_air: 'airfilter', air: 'airfilter', liquide_frein: 'brakefluid', liquide_freins: 'brakefluid', bougies: 'plugs', bougie: 'plugs', vidange: 'oil', revision: 'oil', service: 'oil', huile: 'oil', courroie_accessoires: 'accbelt', vbelt: 'accbelt', refroidissement: 'coolant', liquide_refroidissement: 'coolant', clim: 'clim', climatisation: 'clim', balais: 'wipers', essuie_glace: 'wipers', essuie_glaces: 'wipers', plaquettes_avant: 'padsF', disques: 'discsF', disques_avant: 'discsF', garnitures_arriere: 'brakesR', plaquettes_arriere: 'brakesR', freins_arriere: 'brakesR', machoires: 'brakesR' };
+  const BRAKE_TOKENS = ['brakes', 'freins', 'garnitures', 'plaquettes'];
   if (C.date < 0 || C.v < 0 || C.type < 0) return { ok, errors: [{ line: 1, msg: 'Colonnes obligatoires : date, voiture et type.' }] };
   const findVeh = s => { const k = norm(s), kc = k.replace(/[^a-z0-9]/g, ''); return D.vehicles.find(v => norm(v.surnom) === k) || D.vehicles.find(v => v.cg.A && norm(v.cg.A).replace(/[^a-z0-9]/g, '') === kc) || D.vehicles.find(v => norm(v.modele) === k || norm(v.marque + ' ' + v.modele) === k); };
   rows.slice(1).forEach((r, i) => {
@@ -4140,16 +4422,16 @@ function importCsv(text) {
       e.carburant = v.carburant; e.complet = !/^(non|0|faux|false|n|partiel)$/i.test(cell(C.complet)); e.station = lib;
     } else if (e.type === 'km') { if (e.km == null) { errors.push({ line, msg: 'relevé sans kilométrage' }); return; } }
     else if (e.type === 'nettoyage') { e.ops = []; e.libelle = lib; }
-    else if (e.type === 'entretien' && (cell(C.service) || cell(C.ops) || cell(C.visc))) {
-      const sv = norm(cell(C.service)); e.service = /^inter/.test(sv) ? 'intermediaire' : /^princ/.test(sv) ? 'principal' : '';
+    else if ((e.type === 'entretien' && (cell(C.service) || cell(C.ops) || cell(C.visc))) || (e.type === 'reparation' && cell(C.ops))) {
+      const sv = norm(cell(C.service));
       e.libelle = lib; e.garage = cell(C.garage);
       const hq = cell(C.huile); e.huileQualite = hq ? (OIL_GRADES.find(o => norm(o).replace(/\s/g, '') === norm(hq).replace(/\s/g, '')) || hq) : '';
       e.huileViscosite = cell(C.visc).toUpperCase().replace(/\s+/g, '');
-      let a = num(cell(C.antigel)); if (a != null && a > 0) a = -a; e.antigel = a;
       const toks = norm(cell(C.ops)).split(/[+,;|\/]+/).map(x => x.trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')).filter(Boolean);
       const ids = new Set(), unknown = [];
-      toks.forEach(tk => { const code = OPS_ALIAS[tk] || tk; const it = v.plan.find(p => p.code === code) || v.plan.find(p => norm(p.label).replace(/[^a-z0-9]+/g, '_').includes(tk)); if (it) ids.add(it.id); else unknown.push(tk); });
-      const svc = v.plan.find(p => p.code === 'service'); if (svc && (e.service || e.huileViscosite)) ids.add(svc.id);
+      const sideTxt = norm(lib + ' ' + cell(C.notes)).replace(/«?\s*avant\s*»?\s*barre/g, '');
+      toks.forEach(tk => { const code = BRAKE_TOKENS.includes(tk) ? (/arriere/.test(sideTxt) ? 'brakesR' : 'padsF') : (OPS_ALIAS[tk] || tk); const it = v.plan.find(p => p.code === code) || v.plan.find(p => norm(p.label).replace(/[^a-z0-9]+/g, '_').includes(tk)); if (it) ids.add(it.id); else unknown.push(tk); });
+      const svc = v.plan.find(p => p.code === 'oil'); if (svc && e.type === 'entretien' && (/^(inter|princ)/.test(sv) || e.huileViscosite)) ids.add(svc.id);
       e.ops = Array.from(ids);
       if (unknown.length) e.notes = [e.notes, 'Opérations non reconnues : ' + unknown.join(', ')].filter(Boolean).join(' ');
     }
@@ -4162,6 +4444,8 @@ function importCsv(text) {
       if (e.type === 'ct') { e.resultat = 'A'; e.centre = cell(C.garage) || lib; }
       if (e.type === 'assurance') { e.debut = date; e.fin = addDays(addYears(date, 1), -1); e.assureur = lib; }
     }
+    if (e.type === 'entretien' && num(cell(C.rep))) e.repMontant = num(cell(C.rep));
+    if ((e.type === 'entretien' || e.type === 'reparation') && num(cell(C.ass))) { e.assurPart = num(cell(C.ass)); e.prise = 'partielle'; }
     const dup = D.events.concat(ok).find(x => x.vehicleId === e.vehicleId && x.type === e.type && x.date === e.date && !x.demo && ((e.km != null && num(x.km) === e.km) || (e.montant != null && num(x.montant) === e.montant)));
     if (dup) { errors.push({ line, msg: 'déjà présente, ignorée' }); return; }
     ok.push(e);
@@ -4293,7 +4577,7 @@ const ACTIONS = {
   'del-event': el => armOrRun(el, 'ev:' + el.dataset.id, 'Confirmer', () => {
     const id = el.dataset.id; D.events = D.events.filter(e => e.id !== id);
     D.events.forEach(r => { if (r.type === 'remarque' && r.resolBy === id) { r.resolBy = null; if (r.statut === 'resolu') r.resolNote = r.resolNote || 'Saisie liée supprimée'; } });
-    D.docs.forEach(x => { if (x.eventId === id) { x.status = 'kept'; x.eventId = null; } });
+    D.docs.forEach(x => { if (docEvents(x).includes(id)) unlinkDocEvent(x, id); });
     persist(); closeSheet(); rerender(); toast('Saisie supprimée');
   }),
   'remove-demo': () => { removeDemo(); persist(); rerender(); toast('Exemples retirés'); },
@@ -4301,13 +4585,17 @@ const ACTIONS = {
   jv: el => { U.jv = el.dataset.v; rerender(); },
   sv: el => { U.sv = el.dataset.v; rerender(); },
   'set-color': el => setColor(el.dataset.hex),
-  'add-plan': () => { const v = veh(U.vid); const it = newPlanItem('Nouvel élément'); const ci = v.plan.findIndex(p => p.cat === 'nettoyage'); if (ci >= 0) v.plan.splice(ci, 0, it); else v.plan.push(it); persist(); rerender(); openPlanItem(it.id); },
+  'add-plan': () => { const v = veh(U.vid); const it = newPlanItem('Nouveau poste'); const ci = v.plan.findIndex(p => p.cat === 'nettoyage'); if (ci >= 0) v.plan.splice(ci, 0, it); else v.plan.push(it); persist(); rerender(); openPlanItem(it.id); },
   'plan-edit': el => { U.armed = null; openPlanItem(el.dataset.id); },
   'del-plan': el => armOrRun(el, 'plan:' + el.dataset.id, 'Confirmer', () => { const v = veh(U.vid); v.plan = v.plan.filter(p => p.id !== el.dataset.id); persist(); closeSheet(); rerender(); toast('Élément retiré'); }),
   'plan-reset': el => armOrRun(el, 'plan-reset', 'Confirmer', () => {
-    const v = veh(U.vid);
-    OPEL_PLAN.forEach(def => { const it = v.plan.find(p => p.code === def.code); if (it) { it.km = def.km || null; it.months = def.months || null; } else v.plan.push(newPlanFrom(def, true)); });
-    upgradePlan(v, D); persist(); rerender(); toast('Intervalles Opel rétablis');
+    const v = veh(U.vid); const opel = isOpel(v);
+    PLAN_CATALOG.forEach(def => {
+      const it = v.plan.find(p => p.code === def.code);
+      if (it) { if (def.src !== 'opel' || opel) { it.km = def.km || null; it.months = def.months || null; } it.remind = def.remind !== false; it.kind = def.kind; }
+      else { const n = newPlanFrom(def, opel); const ci = v.plan.findIndex(p => p.cat === 'nettoyage'); if (ci >= 0) v.plan.splice(ci, 0, n); else v.plan.push(n); }
+    });
+    persist(); rerender(); toast('Intervalles rétablis');
   }),
   'clean-done': el => {
     const v = veh(el.dataset.vid); if (!v) return;
@@ -4317,12 +4605,14 @@ const ACTIONS = {
   'add-clean': el => { closeSheet(); openEventForm({ type: 'nettoyage', vid: el.dataset.vid, op: el.dataset.op }); },
   'tick-planned': el => {
     const f = el.closest('form'); const r = f && f.querySelector('input[name="vehicleId"]:checked'); const v = r && veh(r.value); if (!v) return;
-    const next = (programFor(v, 1).list || [])[0]; if (!next) { toast('Programme inconnu : saisis d’abord un service'); return; }
-    const ids = new Set(next.ops.map(o => o.id)); let n = 0;
-    $$('input[name="ops"]', f).forEach(cb => { if (ids.has(cb.value) && !cb.checked) { cb.checked = true; n++; } });
-    if (next.type) { const rb = f.querySelector(`input[name="service"][value="${next.type}"]`); if (rb) rb.checked = true; }
-    toast(n ? `${n} opération${n > 1 ? 's' : ''} cochée${n > 1 ? 's' : ''} : vérifie avec le carnet` : 'Déjà cochées');
+    const d = validDate(f.elements.date.value) ? f.elements.date.value : todayStr();
+    const due = new Set(EC.filter(x => x.v && x.v.id === v.id && x.key.startsWith('plan:') && !x.clean && x.eff && x.eff <= addMonths(d, 2)).map(x => x.planId));
+    let n = 0; $$('input[name="ops"]', f).forEach(cb => { if (due.has(cb.value) && !cb.checked) { cb.checked = true; n++; } });
+    syncAtelier(f);
+    toast(n ? `${n} poste${n > 1 ? 's' : ''} coché${n > 1 ? 's' : ''} : vérifie avec la facture` : due.size ? 'Déjà cochés' : 'Rien n’arrive à échéance d’ici deux mois');
   },
+  'visit-add': el => { const v = veh(el.dataset.vid); const nv = v && nextVisit(v); openEventForm({ type: 'entretien', vid: el.dataset.vid, init: { ops: nv ? nv.items.map(x => x.planId) : [] } }); },
+  'ech-poste': el => { closeSheet(); go('vehicle', { vid: el.dataset.vid, tab: 'entretien' }); if (el.dataset.id) openPlanItem(el.dataset.id); },
   'add-reminder': () => { closeSheet(); openReminderForm(U.view === 'vehicle' ? U.vid : null); },
   'ech-open': el => openEchSheet(el.dataset.key, el.dataset.vid),
   'ech-do': el => echDo(el.dataset),
@@ -4342,7 +4632,7 @@ const ACTIONS = {
   'del-vehicle': el => armOrRun(el, 'veh:' + el.dataset.id, 'Confirmer la suppression', () => {
     const id = el.dataset.id; const evIds = new Set(D.events.filter(e => e.vehicleId === id).map(e => e.id));
     D.vehicles = D.vehicles.filter(v => v.id !== id); D.events = D.events.filter(e => e.vehicleId !== id); D.reminders = D.reminders.filter(r => r.vehicleId !== id);
-    D.docs.forEach(x => { if (x.vehicleId === id) x.vehicleId = null; if (evIds.has(x.eventId)) { x.status = 'kept'; x.eventId = null; } });
+    D.docs.forEach(x => { docEvents(x).filter(i => evIds.has(i)).forEach(i => unlinkDocEvent(x, i)); if (Array.isArray(x.vehicleIds)) { x.vehicleIds = x.vehicleIds.filter(i => i !== id); if (x.vehicleIds.length < 2) { if (x.vehicleIds[0]) x.vehicleId = x.vehicleIds[0]; delete x.vehicleIds; } } if (x.vehicleId === id) x.vehicleId = null; });
     persist(); go('home'); toast('Voiture supprimée');
   }),
   'confirm-restore': () => confirmRestore(),
@@ -4377,8 +4667,11 @@ const ACTIONS = {
   },
   'doc-detach': el => armOrRun(el, 'det:' + el.dataset.id, 'Confirmer', () => {
     const doc = docById(el.dataset.id); if (!doc) return;
-    D.events.forEach(e => { if (Array.isArray(e.docs)) e.docs = e.docs.filter(x => x !== doc.id); });
-    doc.status = 'kept'; doc.eventId = null; persist(); closeViewer();
+    const f0 = $('#sheet-root form[data-form="event"]'); const cur = f0 && f0.dataset.id && docEvents(doc).includes(f0.dataset.id) ? f0.dataset.id : null;
+    const drop = cur && docEvents(doc).length > 1 ? [cur] : docEvents(doc);
+    D.events.forEach(e => { if (Array.isArray(e.docs) && (drop.includes(e.id) || !docEvents(doc).length)) e.docs = e.docs.filter(x => x !== doc.id); });
+    if (drop.length === docEvents(doc).length) { doc.status = 'kept'; doc.eventId = null; delete doc.eventIds; delete doc.vehicleIds; } else drop.forEach(i => unlinkDocEvent(doc, i));
+    persist(); closeViewer();
     const f = $('#sheet-root form[data-form="event"]'); if (f) refreshStrip(f);
     rerender(); toast('Document détaché : il reste dans Documents');
   }),
@@ -4401,6 +4694,7 @@ document.addEventListener('change', ev => {
   if (t.id === 'cap-multi') { onCapture(t, null); return; }
   if (t.id === 'cap-km') { onCapture(t, 'km'); return; }
   if (t.id === 'cap-attach' || t.id === 'cap-attach-cam') { onAttach(t); return; }
+  if (t.form && t.form.dataset.form === 'event' && ['natEnt', 'natRep', 'prise', 'ops', 'multiOn'].includes(t.name)) syncAtelier(t.form);
   if (t.dataset.docKind) {
     const doc = docById(t.dataset.docKind); if (!doc) return; doc.kind = DOC_KINDS[t.value] ? t.value : null; doc.kindSet = true; persist();
     const f = $('#sheet-root form[data-form="event"]'); if (f) refreshStrip(f); rerender(); toast(doc.kind ? `Nature : ${DOC_KINDS[doc.kind]}` : 'Nature effacée'); return;
@@ -4451,6 +4745,7 @@ document.addEventListener('change', ev => {
 let jqTimer = null;
 document.addEventListener('input', ev => {
   const t = ev.target; if (t.dataset && t.dataset.calc && t.form) calcPlein(t.form, t.dataset.calc);
+  if (t.form && t.form.elements.natEnt && ['montant', 'repMontant', 'assurPart', 'franchise'].includes(t.name)) syncAtelier(t.form);
   if (t.dataset && t.dataset.filter === 'jq') { clearTimeout(jqTimer); jqTimer = setTimeout(() => { U.jq = t.value; U.jlimit = 150; const pos = t.selectionStart; rerenderKeepFocus(); const n = $('#jq'); if (n && pos != null) n.setSelectionRange(pos, pos); }, 220); }
 });
 document.addEventListener('submit', ev => {
